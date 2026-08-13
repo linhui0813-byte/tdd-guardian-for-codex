@@ -1,0 +1,154 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 is the minimum the plugin claims to support. Verified, not assumed.
+        node: ['18', '20', '22', '24']
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run the test suite
+        id: run
+        run: |
+          set -o pipefail
+          # `node --test` with a quoted glob needs Node 21+ and SILENTLY matches
+          # nothing on older versions while exiting 0. The bare form discovers
+          # tests/ on every supported version — do not "simplify" this to a glob.
+          node --test 2>&1 | tee test-output.txt
+
+      - name: Assert the run actually verified something
+        run: |
+          out=$(cat test-output.txt)
+          # Node <=22 emits TAP ("# tests 162"), Node 24 emits spec ("ℹ tests 162").
+          num() { echo "$out" | grep -oE "^[#ℹ] $1 [0-9]+" | grep -oE '[0-9]+$' | head -1; }
+          tests=$(num tests); pass=$(num pass); fail=$(num fail); skipped=$(num skipped)
+          echo "tests=$tests pass=$pass fail=$fail skipped=${skipped:-0}"
+
+          # A suite that discovered nothing exits 0. Green with nothing run is
+          # indistinguishable from green with everything run — the invariant this
+          # plugin enforces, applied to its own CI.
+          if [ -z "$tests" ] || [ "$tests" -eq 0 ]; then
+            echo "::error::Test runner discovered zero tests. The suite did not run."
+            exit 1
+          fi
+          if [ "${fail:-1}" -ne 0 ]; then
+            echo "::error::$fail test(s) failed."
+            exit 1
+          fi
+          # CI installs git, so the git-dependent tests must not skip here.
+          if [ "${skipped:-0}" -ne 0 ]; then
+            echo "::error::$skipped test(s) skipped. CI has git, so nothing should skip."
+            exit 1
+          fi
+
+          # The README carries a static "tests N passing" badge. Fail if it drifted.
+          expected=$(grep -oE 'tests-[0-9]+%20passing' README.md | grep -oE '[0-9]+' | head -1)
+          if [ -n "$expected" ] && [ "$tests" -ne "$expected" ]; then
+            echo "::error::README badge claims $expected tests but the suite has $tests. Update the badge in README.md."
+            exit 1
+          fi
+
+  artifacts:
+    name: plugin artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Validate every JSON file
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            node -e "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))" "$f" \
+              || { echo "::error file=$f::invalid JSON"; fail=1; }
+          done < <(git ls-files '*.json')
+          exit $fail
+
+      - name: Validate Codex plugin contracts
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const plugin = JSON.parse(fs.readFileSync('.codex-plugin/plugin.json', 'utf8'));
+          const market = JSON.parse(fs.readFileSync('.agents/plugins/marketplace.json', 'utf8'));
+          const hooks = JSON.parse(fs.readFileSync('hooks/hooks.json', 'utf8'));
+
+          const assert = (ok, message) => {
+            if (!ok) throw new Error(message);
+          };
+
+          assert(plugin.name === 'tdd-guardian-for-codex', 'unexpected plugin name');
+          assert(plugin.skills === './skills/', 'plugin must expose ./skills/');
+          assert(fs.existsSync('skills/tdd-guardian/SKILL.md'), 'main skill is missing');
+          assert(market.plugins.some((p) =>
+            p.name === plugin.name &&
+            p.source?.url === 'https://github.com/linhui0813-byte/tdd-guardian-for-codex.git' &&
+            p.source?.ref === 'main'
+          ), 'marketplace source does not match this repository');
+          assert(hooks.hooks?.PreToolUse?.length === 1, 'PreToolUse hook is missing');
+          assert(hooks.hooks?.Stop?.length === 1, 'Stop hook is missing');
+
+          for (const event of ['PreToolUse', 'Stop']) {
+            const command = hooks.hooks[event][0].hooks[0].command;
+            assert(command.includes('${PLUGIN_ROOT}'), `${event} must resolve from PLUGIN_ROOT`);
+          }
+          NODE
+
+      - name: Syntax-check deterministic hook code
+        run: |
+          while IFS= read -r f; do
+            node --check "$f"
+          done < <(git ls-files 'scripts/**/*.js')
+
+  hooks:
+    name: hook smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Hooks stay silent on an uninitialised project
+        run: |
+          tmp=$(mktemp -d)
+          out=$(echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"cwd\":\"$tmp\"}" \
+            | node scripts/tdd-guardian/pretool_guard.js)
+          if [ -n "$out" ]; then
+            echo "::error::PreToolUse must emit nothing for a project with no config. Got: $out"
+            exit 1
+          fi
+          out=$(echo "{\"cwd\":\"$tmp\"}" | node scripts/tdd-guardian/stop_gate.js)
+          if [ -n "$out" ]; then
+            echo "::error::Stop must emit nothing for a project with no config. Got: $out"
+            exit 1
+          fi
+
+      - name: Hooks survive malformed input without crashing
+        run: |
+          for script in pretool_guard stop_gate; do
+            echo 'not json' | node "scripts/tdd-guardian/$script.js" >/dev/null \
+              || { echo "::error::$script crashed on malformed stdin"; exit 1; }
+            printf '' | node "scripts/tdd-guardian/$script.js" >/dev/null \
+              || { echo "::error::$script crashed on empty stdin"; exit 1; }
+          done

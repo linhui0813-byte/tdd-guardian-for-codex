@@ -1,0 +1,113 @@
+---
+name: implement
+description: |
+  Apply the tdd-implementer role for ONE work item — red, green, refactor — then verify with the project's test command.
+
+  <example>
+  user: $tdd-guardian implement WI-1
+  assistant: |
+    Loading the most recent plan and test matrix, locating WI-1, then applying the tdd-implementer. It will write the failing tests first (red), add the minimal implementation (green), then verify against the `stop` lanes — the fast inner loop — and stop without touching the next work item. Slower `commit` and `push` lanes are named but not run; `$tdd-guardian gate` handles those. If verification fails, it reports the blocker and I stop the workflow.
+  </example>
+
+  <example>
+  user: $tdd-guardian implement
+  assistant: |
+    $ARGUMENTS is empty. I will ask which work item to implement — listing the ids from the most recent plan file so the user can pick one. I will NOT iterate through all work items in a single invocation of this command.
+  </example>
+argument-hint: "<work-item id, e.g. WI-1>"
+model: inherit
+---
+
+Apply the `tdd-implementer` role for a single work item, then verify via `workflows/shared/run-lane.md`.
+
+## Steps
+
+### Step 1 — Load config
+
+Follow `workflows/shared/load-config.md`.
+
+### Step 2 — Resolve work item, plan, and matrix
+
+Parse `$ARGUMENTS` as a work-item id (e.g. `WI-1`, `WI-3`). If empty:
+
+- Glob `.codex/tdd-guardian/plan-*.md`, pick the latest.
+- Extract work-item ids from `### WI-N:` headings.
+- Ask the user via `ask the user` to pick one. Do NOT auto-select all.
+
+Locate the matching `### WI-N:` block from the latest plan file and the matching test-matrix entries from the latest `tests-*.md` file.
+
+If either is missing, stop with a pointer to run `$tdd-guardian plan` or `$tdd-guardian design-tests` first.
+
+### Step 3 — Apply the implementer
+
+Read `references/roles/tdd-implementer.md`, adopt that role in the current Codex turn, and provide it with:
+- The single work item's block (acceptance criteria, required tests).
+- The matching rows from the test matrix.
+- A directive:
+  - "Write the test file(s) first so they fail (red). Show the failing run."
+  - "Write the minimal implementation to make tests pass (green). Show the passing run."
+  - "Do NOT proceed to any other work item. Do NOT commit, push, or open PRs."
+  - "If tests cannot be made green, report a BLOCKED status with specific evidence."
+
+### Step 4 — Verification gate
+
+After the implementer reports completion, invoke `workflows/shared/run-lane.md` for the lanes bound to `stop` — the fast inner loop. Do NOT run `commit` or `push` lanes here; verifying one work item against a browser suite is the wrong trade, and `$tdd-guardian gate` exists for that.
+
+If the work item's test matrix assigned cases to the `integration` lane, run that lane too and say that you did.
+
+| run-lane result | Action |
+|-----------------|--------|
+| `pass` | Mark WI-N DONE. Print next-step hint. |
+| `fail` | Print the failing tests; prompt user whether to retry the implementer with the failure output as context, or stop. |
+| `no-tests` | Stop with: "Test runner reports no tests discovered. The implementer did not add tests as instructed." |
+| `coverage-missing` | Stop. The lane's coverage command or path is wrong — point at `$tdd-guardian probe`. |
+| `runner-missing` / `runner-error` / `killed` / `timeout` | Stop with the environment-error text from run-lane.md — do NOT retry the implementer. It would edit correct code to chase a broken runner. |
+
+### Step 5 — Persist status
+
+Append to `.codex/tdd-guardian/state.json` (create if missing) a record:
+
+```json
+{
+  "workItems": {
+    "WI-N": {
+      "status": "DONE" | "BLOCKED" | "FAILED-VERIFICATION",
+      "testFiles": ["..."],
+      "sourceFiles": ["..."],
+      "updatedAt": "<ISO timestamp>"
+    }
+  }
+}
+```
+
+This file is already in `.gitignore` (per `$tdd-guardian init`).
+
+## Output format
+
+```markdown
+# WI-{N}: {title} — {DONE | BLOCKED | FAILED-VERIFICATION}
+
+## Tests written
+- `{test file}`: {N} cases
+
+## Implementation
+- `{source file}`: {brief description}
+
+## Verification
+- Lanes run: `{names — the stop lanes, plus integration when the matrix assigned cases to it}`
+- Result: PASS | FAIL | no-tests | coverage-missing | runner-error
+- Details: {per lane — passed count, failed count, duration}
+- Not run: {lanes on commit/push triggers, with "run $tdd-guardian gate <trigger>"}
+
+## Next step
+- On PASS: run `$tdd-guardian implement WI-{N+1}` (or `$tdd-guardian audit-coverage` if this was the last work item).
+- On FAIL: inspect the failing tests, then retry with `$tdd-guardian implement WI-{N}`.
+- On BLOCKED: resolve the blocker and retry.
+```
+
+## Contract
+
+- Input: one work-item id.
+- Output: source + test file edits for that single work item, plus a verification result.
+- Side effects: writes source/test files, updates `.codex/tdd-guardian/state.json`. Never commits.
+- Failure modes: verification failure leaves the work item in `FAILED-VERIFICATION` state so the workflow command can decide whether to retry.

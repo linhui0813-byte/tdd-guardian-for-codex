@@ -1,0 +1,21 @@
+{
+  "name": "linhui-tdd-guardian",
+  "interface": {
+    "displayName": "linhui TDD Guardian"
+  },
+  "plugins": [
+    {
+      "name": "tdd-guardian-for-codex",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/linhui0813-byte/tdd-guardian-for-codex.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

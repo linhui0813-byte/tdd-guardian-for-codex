@@ -1,0 +1,4 @@
+interface:
+  display_name: "TDD Guardian"
+  short_description: "Strict TDD workflows and quality gates"
+  default_prompt: "Use $tdd-guardian to initialize and enforce TDD quality gates in this repository."

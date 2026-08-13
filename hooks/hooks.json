@@ -1,0 +1,32 @@
+{
+  "description": "Codex-native TDD quality gates for commits, pushes, and turn completion.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "description": "Guards Bash tool calls; checks that every lane gating a commit or push has a fresh pass",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/tdd-guardian/pretool_guard.js\"",
+            "timeout": 30,
+            "statusMessage": "Checking TDD gate freshness"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "description": "Runs the stop lanes after task completion, merges coverage, and records per-lane gate state",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/tdd-guardian/stop_gate.js\"",
+            "timeout": 3600,
+            "statusMessage": "Running TDD quality gates"
+          }
+        ]
+      }
+    ]
+  }
+}

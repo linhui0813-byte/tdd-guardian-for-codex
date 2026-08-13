@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "enabled": true,
+  "enforceOnStop": false,
+  "blockCommitWithoutFreshGate": false,
+  "staleGateAction": "deny",
+  "gateFreshnessMinutes": 120,
+  "smartStaleness": true,
+  "bypassEnv": "TDD_GUARD_BYPASS",
+  "preflightCommand": "",
+  "lanes": [
+    {
+      "name": "unit",
+      "description": "In-process tests. No external services.",
+      "command": "pnpm exec vitest run --coverage",
+      "gateOn": ["stop", "commit"],
+      "coverage": "include",
+      "coverageSummaryPath": "coverage/coverage-summary.json",
+      "probeCommand": "pnpm exec vitest list",
+      "timeoutMs": 600000
+    }
+  ],
+  "coverageThresholds": {
+    "lines": 100,
+    "functions": 100,
+    "branches": 100,
+    "statements": 100
+  },
+  "coverageMode": "absolute",
+  "requireMutation": false,
+  "mutationCommand": "",
+  "mutationGateOn": ["stop"]
+}
