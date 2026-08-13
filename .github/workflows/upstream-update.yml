@@ -1,0 +1,82 @@
+name: upstream update
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+      timezone: 'Asia/Shanghai'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tdd-guardian-upstream-update
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check original repository
+    if: github.repository == 'linhui0813-byte/tdd-guardian-for-codex'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Check upstream version and commit
+        id: upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/upstream/check.js
+
+      - name: Open or update the review pull request
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OLD_VERSION: ${{ steps.upstream.outputs.old_version }}
+          NEW_VERSION: ${{ steps.upstream.outputs.new_version }}
+          OLD_COMMIT: ${{ steps.upstream.outputs.old_commit }}
+          NEW_COMMIT: ${{ steps.upstream.outputs.new_commit }}
+          NEW_COMMIT_DATE: ${{ steps.upstream.outputs.new_commit_date }}
+          VERSION_CHANGED: ${{ steps.upstream.outputs.version_changed }}
+          SAME_VERSION_COMMIT: ${{ steps.upstream.outputs.same_version_commit }}
+        run: |
+          set -euo pipefail
+          branch='automation/update-tdd-guardian-upstream'
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B "$branch"
+          git add upstream.lock.json
+          git commit -m "chore: track upstream ${NEW_VERSION} at ${NEW_COMMIT:0:12}"
+          git push --force origin "$branch"
+
+          compare_url="https://github.com/xiaolai/tdd-guardian-for-claude/compare/${OLD_COMMIT}...${NEW_COMMIT}"
+          body_file="$RUNNER_TEMP/upstream-update.md"
+          {
+            echo '## Original repository update detected'
+            echo
+            echo "- Version: \`${OLD_VERSION}\` → \`${NEW_VERSION}\`"
+            echo "- Commit: \`${OLD_COMMIT}\` → \`${NEW_COMMIT}\`"
+            echo "- Upstream commit date: \`${NEW_COMMIT_DATE}\`"
+            echo "- Version changed: \`${VERSION_CHANGED}\`"
+            echo "- Same-version commit change: \`${SAME_VERSION_COMMIT}\`"
+            echo "- Compare: ${compare_url}"
+            echo
+            echo 'This PR updates provenance only. Review and port the relevant Claude changes to the Codex contracts; do not merge upstream files mechanically.'
+            echo
+            echo 'The updater never auto-merges, installs, or publishes.'
+          } > "$body_file"
+
+          existing="$(gh pr list --base main --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          title="chore: review upstream ${NEW_VERSION} (${NEW_COMMIT:0:12})"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body-file "$body_file"
+          else
+            gh pr create --base main --head "$branch" --title "$title" --body-file "$body_file"
+          fi

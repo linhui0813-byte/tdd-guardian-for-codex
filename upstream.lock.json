@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "repository": "xiaolai/tdd-guardian-for-claude",
+  "ref": "main",
+  "manifestPath": ".claude-plugin/plugin.json",
+  "name": "tdd-guardian",
+  "version": "0.8.1",
+  "commit": "0b0bb40f0e560438a17f0742be72d846df140540",
+  "commitDate": "2026-08-07T15:09:52Z"
+}

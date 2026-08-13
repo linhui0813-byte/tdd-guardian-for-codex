@@ -1,6 +1,6 @@
 # TDD Guardian for Codex
 
-[![tests 164 passing](https://img.shields.io/badge/tests-164%20passing-success)](https://github.com/linhui0813-byte/tdd-guardian-for-codex/actions)
+[![tests 172 passing](https://img.shields.io/badge/tests-172%20passing-success)](https://github.com/linhui0813-byte/tdd-guardian-for-codex/actions)
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-111827)](https://learn.chatgpt.com/docs/build-plugins)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 
@@ -110,6 +110,12 @@ python3 /path/to/skill-creator/scripts/quick_validate.py skills/tdd-guardian
 ```
 
 CI runs the test suite on Node.js 18, 20, 22, and 24, rejects zero-test or skipped runs, validates JSON, and smoke-tests both hook scripts.
+
+## Upstream tracking
+
+The `upstream update` GitHub Actions workflow checks [the original Claude repository](https://github.com/xiaolai/tdd-guardian-for-claude) every day at 08:00 in the `Asia/Shanghai` timezone. It compares both the manifest version and the full `main` commit SHA against `upstream.lock.json`.
+
+When either value changes, the workflow opens or updates a review pull request containing the exact old and new versions, commits, and upstream comparison link. It updates provenance only: upstream Claude files are never copied mechanically, and the workflow never auto-merges, installs, or publishes.
 
 ## Provenance and license
 
