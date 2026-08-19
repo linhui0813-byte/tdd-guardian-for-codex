@@ -1,6 +1,6 @@
 # TDD Guardian for Codex
 
-[![tests 172 passing](https://img.shields.io/badge/tests-172%20passing-success)](https://github.com/linhui0813-byte/tdd-guardian-for-codex/actions)
+[![tests 178 passing](https://img.shields.io/badge/tests-178%20passing-success)](https://github.com/linhui0813-byte/tdd-guardian-for-codex/actions)
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-111827)](https://learn.chatgpt.com/docs/build-plugins)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 
@@ -117,6 +117,16 @@ The `upstream update` GitHub Actions workflow checks [the original Claude reposi
 
 When either value changes, the workflow opens or updates a review pull request containing the exact old and new versions, commits, and upstream comparison link. It updates provenance only: upstream Claude files are never copied mechanically, and the workflow never auto-merges, installs, or publishes.
 
+The upstream `0.9.0` review ports the fail-loud gate fixes that apply to Codex `Stop`: unreachable enforcement now blocks, incomplete coverage merges fail, bootstrap exemptions apply only to coverage-contributing lanes, and coverage-gate exceptions produce a blocking verdict. The additive `0.9.0` critical-path, specification-strength, adversarial-review, and red-receipt features remain explicitly deferred until they receive Codex-native designs and regression coverage.
+
+## Release notes
+
+### 0.1.1
+
+- Port the applicable upstream `0.9.0` fail-loud fixes to Codex `Stop` semantics.
+- Reject partial coverage merges when a contributing optional lane produces no report.
+- Preserve genuine greenfield bootstrap behavior without letting unrelated bootstrap lanes hide empty coverage.
+
 ## Provenance and license
 
-Based on TDD Guardian for Claude `0.8.1`, upstream commit `0b0bb40f0e560438a17f0742be72d846df140540`. Original work copyright © 2026 Xiaolai Li. Codex port maintained by `linhui0813-byte` under the same [ISC License](LICENSE).
+Core port based on TDD Guardian for Claude `0.8.1`, upstream commit `0b0bb40f0e560438a17f0742be72d846df140540`. Reviewed through upstream `0.9.0`, commit `4e6e3c20069125e6d81cc7ca7227876e3911f1b4`, with the applicable fail-loud fixes ported as described above. Original work copyright © 2026 Xiaolai Li. Codex port maintained by `linhui0813-byte` under the same [ISC License](LICENSE).
