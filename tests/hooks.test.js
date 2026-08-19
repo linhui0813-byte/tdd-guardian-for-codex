@@ -9,6 +9,9 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
+const coverageLib = require("../scripts/tdd-guardian/lib/coverage");
+const { runCoverageGateSafely } = require("../scripts/tdd-guardian/stop_gate");
+
 const PRETOOL = path.join(__dirname, "..", "scripts", "tdd-guardian", "pretool_guard.js");
 const STOP_HOOK = path.join(__dirname, "..", "scripts", "tdd-guardian", "stop_gate.js");
 
@@ -191,6 +194,49 @@ test("stop: does nothing when enforcement is off", () => {
   assert.equal(decision, null);
 });
 
+test("stop: configured coverage enforcement with no Stop lane blocks instead of going quiet", () => {
+  const dir = workspace({
+    enabled: true,
+    enforceOnStop: true,
+    coverageThresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
+    lanes: [{ name: "unit", command: "true", gateOn: ["commit"] }],
+  });
+
+  const { decision } = runHook(STOP_HOOK, { cwd: dir });
+  assert.equal(decision.decision, "block");
+  assert.match(decision.reason, /nothing can be enforced/);
+  assert.match(decision.reason, /coverage thresholds/);
+});
+
+test("stop: configured mutation enforcement with no Stop lane blocks instead of going quiet", () => {
+  const dir = workspace({
+    enabled: true,
+    enforceOnStop: true,
+    coverageThresholds: { lines: 0, functions: 0, branches: 0, statements: 0 },
+    requireMutation: true,
+    mutationCommand: "true",
+    mutationGateOn: ["stop"],
+    lanes: [{ name: "unit", command: "true", gateOn: ["commit"] }],
+  });
+
+  const { decision } = runHook(STOP_HOOK, { cwd: dir });
+  assert.equal(decision.decision, "block");
+  assert.match(decision.reason, /mutation testing/);
+});
+
+test("stop: no Stop lane and no configured enforcement stays silent", () => {
+  const dir = workspace({
+    enabled: true,
+    enforceOnStop: true,
+    coverageThresholds: { lines: 0, functions: 0, branches: 0, statements: 0 },
+    lanes: [{ name: "unit", command: "true", gateOn: ["commit"] }],
+  });
+
+  const { decision, stderr } = runHook(STOP_HOOK, { cwd: dir });
+  assert.equal(decision, null);
+  assert.match(stderr, /nothing to run/);
+});
+
 test("stop: runs the stop lanes and records per-lane state", () => {
   const dir = workspace({
     enabled: true,
@@ -290,6 +336,30 @@ test("stop: a coverage report that measured nothing blocks instead of scoring 10
   const { decision } = runHook(STOP_HOOK, { cwd: dir });
   assert.equal(decision.decision, "block");
   assert.match(decision.reason, /zero measurable lines/);
+});
+
+test("stop: coverage gate exceptions are contained as fail-loud verdicts", () => {
+  const originalMerge = coverageLib.mergeReports;
+  coverageLib.mergeReports = () => {
+    throw new Error("synthetic merge failure");
+  };
+
+  try {
+    const result = runCoverageGateSafely(
+      { coverageThresholds: { lines: 100 }, coverageMode: "absolute" },
+      [{ name: "unit", coverageReport: { format: "synthetic" } }],
+      {},
+      process.cwd(),
+      [],
+      ["unit"]
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.crashed, true);
+    assert.match(result.message, /synthetic merge failure/);
+    assert.match(result.message, /Nothing was verified/);
+  } finally {
+    coverageLib.mergeReports = originalMerge;
+  }
 });
 
 test("stop: thresholds with no coverage-producing lane blocks with guidance", () => {
@@ -476,6 +546,28 @@ test("stop: the coverage gate is skipped while a lane is in bootstrap", () => {
   assert.equal(readState(dir).coverage, null, "no coverage should be recorded when there is none to measure");
 });
 
+test("stop: an unrelated bootstrap lane does not exempt an empty mature coverage report", () => {
+  const empty = JSON.stringify({ total: { lines: { total: 0, covered: 0, pct: 100 }, statements: { total: 0, covered: 0, pct: 100 } } });
+  const dir = workspace({
+    enabled: true,
+    enforceOnStop: true,
+    lanes: [
+      {
+        name: "unit",
+        command: `printf '%s' ${JSON.stringify(empty)} > coverage.json && echo "Tests  1 passed (1)"`,
+        gateOn: ["stop"],
+        coverage: "include",
+        coverageSummaryPath: "coverage.json",
+      },
+      { name: "e2e", command: 'echo "no tests found"', gateOn: ["stop"], coverage: "none" },
+    ],
+  });
+
+  const { decision } = runHook(STOP_HOOK, { cwd: dir });
+  assert.equal(decision.decision, "block");
+  assert.match(decision.reason, /zero measurable lines/);
+});
+
 test("stop: once a lane has had tests, zero tests blocks as a regression", () => {
   const dir = workspace({
     enabled: true,
@@ -570,6 +662,44 @@ test("stop: an optional lane records its failure without blocking", () => {
   const { decision } = runHook(STOP_HOOK, { cwd: dir });
   assert.equal(decision, null);
   assert.equal(readState(dir).lanes.smoke.last_result, "fail");
+});
+
+test("stop: an optional coverage lane with no report blocks an incomplete merge", () => {
+  const complete = JSON.stringify({
+    total: {
+      lines: { total: 10, covered: 10, pct: 100 },
+      functions: { total: 2, covered: 2, pct: 100 },
+      branches: { total: 2, covered: 2, pct: 100 },
+      statements: { total: 10, covered: 10, pct: 100 },
+    },
+  });
+  const dir = workspace({
+    enabled: true,
+    enforceOnStop: true,
+    coverageThresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
+    lanes: [
+      {
+        name: "unit",
+        command: `printf '%s' ${JSON.stringify(complete)} > coverage.json && echo "Tests  1 passed (1)"`,
+        gateOn: ["stop"],
+        coverage: "include",
+        coverageSummaryPath: "coverage.json",
+      },
+      {
+        name: "integration",
+        command: 'echo "Tests  1 failed | 0 passed (1)"; exit 1',
+        gateOn: ["stop"],
+        coverage: "include",
+        coverageSummaryPath: "coverage-integration.json",
+        optional: true,
+      },
+    ],
+  });
+
+  const { decision } = runHook(STOP_HOOK, { cwd: dir });
+  assert.equal(decision.decision, "block");
+  assert.match(decision.reason, /produced no report: integration/);
+  assert.match(decision.reason, /measured against a subset/);
 });
 
 test("stop: the bypass env var records the bypass and runs nothing", () => {

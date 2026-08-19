@@ -1,6 +1,6 @@
 {
   "name": "tdd-guardian-for-codex",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codex-native TDD Guardian with test-lane, coverage, mutation, commit, push, and end-of-turn quality gates.",
   "author": {
     "name": "linhui0813-byte",

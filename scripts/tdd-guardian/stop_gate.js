@@ -83,9 +83,23 @@ function laneFailureReport(lane, result) {
   return lines.join("\n");
 }
 
-function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes) {
+function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, coverageLanes) {
   const reports = laneResults.filter((r) => r.coverageReport).map((r) => r.coverageReport);
-  const inBootstrap = bootstrapLanes.length > 0;
+  const expected = coverageLanes || [];
+
+  // Bootstrap belongs to the lanes expected to measure coverage. A new lane
+  // that contributes no coverage must not hide an empty report from a mature
+  // coverage lane.
+  const inBootstrap = expected.length
+    ? expected.every((name) => bootstrapLanes.includes(name))
+    : bootstrapLanes.length > 0 && bootstrapLanes.length === laneResults.length;
+
+  // Optional means a lane's test failure does not block on its own. It does not
+  // make that lane's promised coverage optional: evaluating a partial merge can
+  // make an incompletely measured project look green.
+  const missing = expected.filter(
+    (name) => !bootstrapLanes.includes(name) && !laneResults.some((r) => r.name === name && r.coverageReport)
+  );
 
   if (reports.length === 0) {
     const wantsCoverage = Object.values(config.coverageThresholds).some((v) => Number(v) > 0);
@@ -104,6 +118,18 @@ function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes) {
       message:
         "Coverage thresholds are set but no lane produced a coverage report.\n" +
         'Set coverage:"include" and coverageSummaryPath on the lane that emits coverage, or set all thresholds to 0.',
+      record: null,
+    };
+  }
+
+  const wantsCoverage = Object.values(config.coverageThresholds).some((v) => Number(v) > 0);
+  if (missing.length && wantsCoverage) {
+    return {
+      ok: false,
+      message:
+        `Coverage is enforced, but ${missing.length} lane(s) with coverage:"include" produced no report: ${missing.join(", ")}.\n` +
+        `The merge would cover only part of the project, so every threshold below it would be measured against a subset. ` +
+        `Fix the lane, or set coverage:"none" on it if it is not meant to contribute.`,
       record: null,
     };
   }
@@ -186,6 +212,35 @@ function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes) {
   };
 }
 
+function runCoverageGateSafely(config, laneResults, state, cwd, bootstrapLanes, coverageLanes) {
+  try {
+    return runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, coverageLanes);
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    return {
+      ok: false,
+      crashed: true,
+      message: [
+        `The coverage gate threw before reaching a verdict: ${detail}`,
+        "",
+        "This is a defect in TDD Guardian, not in your tests. Nothing was verified, so nothing is being reported as passing.",
+        err && err.stack ? "" : null,
+        err && err.stack ? err.stack : null,
+      ]
+        .filter((line) => line !== null)
+        .join("\n"),
+      record: null,
+    };
+  }
+}
+
+function enforcementDemands(config) {
+  const demands = [];
+  if (Object.values(config.coverageThresholds).some((v) => Number(v) > 0)) demands.push("coverage thresholds");
+  if (config.requireMutation && config.mutationGateOn.includes("stop")) demands.push("mutation testing");
+  return demands;
+}
+
 function describeTotals(percentages) {
   return Object.entries(percentages)
     .map(([k, v]) => `${k}=${v === null ? "n/a" : v.toFixed(2) + "%"}`)
@@ -252,7 +307,21 @@ function main() {
 
   const lanes = lanesLib.lanesForTrigger(config, "stop");
   if (lanes.length === 0) {
-    console.error("[tdd-guardian] No lanes are bound to the stop trigger — nothing to run.");
+    const demands = enforcementDemands(config);
+    if (demands.length === 0) {
+      console.error("[tdd-guardian] No lanes are bound to the stop trigger — nothing to run.");
+      return;
+    }
+    lanesLib.saveState(cwd, state);
+    fail(
+      "No lane is bound to Stop, so nothing can be enforced",
+      [
+        `enforceOnStop is true and this project configures: ${demands.join(", ")}.`,
+        'But no lane has "stop" in its gateOn, so no suite runs and none of that enforcement can be evaluated.',
+        "",
+        'Add "stop" to the gateOn of a fast lane, or set enforceOnStop to false.',
+      ].join("\n")
+    );
     return;
   }
 
@@ -291,14 +360,15 @@ function main() {
     }
   }
 
-  const coverageGate = runCoverageGate(config, laneResults, state, cwd, bootstrapLanes);
+  const coverageLaneNames = lanes.filter((lane) => lane.coverage === "include").map((lane) => lane.name);
+  const coverageGate = runCoverageGateSafely(config, laneResults, state, cwd, bootstrapLanes, coverageLaneNames);
   log.push(coverageGate.message);
   if (coverageGate.record) state.coverage = coverageGate.record;
   if (coverageGate.newBaseline) state.baseline = coverageGate.newBaseline;
 
   if (!coverageGate.ok) {
     lanesLib.saveState(cwd, state);
-    fail("Coverage gate failed", log.join("\n\n"));
+    fail(coverageGate.crashed ? "Coverage gate crashed" : "Coverage gate failed", log.join("\n\n"));
     return;
   }
 
@@ -323,4 +393,8 @@ function main() {
   lanesLib.saveState(cwd, state);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = {
+  runCoverageGateSafely,
+};
