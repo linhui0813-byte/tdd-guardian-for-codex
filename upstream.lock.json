@@ -4,7 +4,7 @@
   "ref": "main",
   "manifestPath": ".claude-plugin/plugin.json",
   "name": "tdd-guardian",
-  "version": "0.9.0",
-  "commit": "4e6e3c20069125e6d81cc7ca7227876e3911f1b4",
-  "commitDate": "2026-08-15T02:40:03Z"
+  "version": "0.9.1",
+  "commit": "71346d85a0dccd543c6dadafdac24380d894237a",
+  "commitDate": "2026-08-24T10:08:51Z"
 }
