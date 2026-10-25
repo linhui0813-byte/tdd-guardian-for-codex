@@ -1,7 +1,7 @@
----
-description: "Shared: load .codex/tdd-guardian/config.json, migrate v1 to v2, validate lanes, fail loudly if missing"
-user-invocable: false
----
+## Plugin root
+
+Use `plugin_root` resolved by the main `skills/tdd-guardian/SKILL.md`. Replace `<plugin_root>` with that absolute path before running commands. Check each script exists before running it; if it is missing, report the path error. The project workspace is separate from the plugin root.
+
 <!-- Shared partial: TDD Guardian configuration loader -->
 <!-- Referenced by: plan, design-tests, implement, audit-coverage, audit-mutation, review, status, probe, gate, workflow. Do not use standalone. -->
 
@@ -12,7 +12,8 @@ Load, migrate, and validate the per-project configuration at `.codex/tdd-guardia
 The same loading, migration, and validation logic is implemented in `scripts/tdd-guardian/lib/config.js` and used by the hooks. **Prefer running it over re-implementing the checks by hand:**
 
 ```bash
-node -e "const c=require('<plugin-root>/scripts/tdd-guardian/lib/config.js');console.log(JSON.stringify(c.load(process.cwd()),null,2))"
+[ -f '<plugin_root>/scripts/tdd-guardian/lib/config.js' ] || { echo 'tdd-guardian: scripts/tdd-guardian/lib/config.js not found under the plugin root' >&2; exit 1; }
+node -e "const c=require('<plugin_root>/scripts/tdd-guardian/lib/config.js');console.log(JSON.stringify(c.load(process.cwd()),null,2))"
 ```
 
 That returns `{config, errors, warnings, notes, raw, exists}` in one call, already migrated and validated. Fall back to the manual steps below only when the plugin root is not resolvable.
@@ -77,7 +78,7 @@ Surface the migration to the user once, as a note, with a pointer to `$tdd-guard
 | `preflightCommand` | string | no | Runs before any lane (e.g. a type check) |
 | `gateFreshnessMinutes` | number | no | How long a passing lane stays fresh |
 | `smartStaleness` | boolean | no | Default true — an expired pass stays valid while no source changed |
-| `enforceOnStop` | boolean | no | Whether the Stop hook runs lanes |
+| `enforceOnStop` | boolean | no | Whether the Codex Stop hook runs fast lanes at turn end; false by default |
 | `blockCommitWithoutFreshGate` | boolean | no | Whether PreToolUse checks freshness |
 
 ### Step 6 — Validate every lane
@@ -115,3 +116,7 @@ Warnings (report, do not stop):
 ### Step 7 — Return
 
 Return the parsed, migrated, validated config plus the warning and note lists. The caller MUST NOT proceed without a config, and MUST surface warnings rather than swallowing them — every one of them describes a way the gate can silently do nothing.
+
+## Critical-path configuration
+
+`criticalPaths` is optional and defaults to `[]`. Each entry requires a nonempty `glob`; optional `thresholds` inherit the global values. `requireMutation: true` requires a mutation command. `requireSpecLevel` accepts S1-S6 and is checked by the test designer and reviewer, not by the hook. Use the config loader for type and duplicate-glob validation. Existing project configs need no rewrite.

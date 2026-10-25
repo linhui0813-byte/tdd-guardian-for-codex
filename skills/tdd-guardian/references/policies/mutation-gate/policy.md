@@ -1,8 +1,3 @@
----
-name: mutation-gate
-description: Validate test strength with mutation testing and report weak assertions. Covers the Stryker family (JS/TS, .NET, Scala), PIT (JVM), Infection (PHP), mutmut and cosmic-ray (Python), go-mutesting and gremlins (Go), cargo-mutants (Rust), mutant (Ruby), and muter (Swift).
----
-
 # Mutation Gate
 
 Mutation testing answers the question coverage can't: "would a buggy version of this code slip past my tests?" A mutation tool introduces small, controlled edits ("mutants") — flipping `<` to `<=`, replacing `true` with `false`, deleting statements — and reruns the test suite. A mutant the tests catch is "killed"; one that slips through is a "survivor" and evidence of weak assertions.
@@ -33,7 +28,7 @@ Mutation testing answers the question coverage can't: "would a buggy version of 
 
 **PIT is the strongest mutation tool in any ecosystem** — if the project is JVM, prefer it over anything else here.
 
-Every tool above is parsed by `workflows/shared/parse-mutation.md`. Stryker, Stryker.NET, and stryker4s share one schema (mutation-testing-elements), so a tool not on this list is still supported if it can emit that format — configure that reporter rather than asking for a new parser.
+Every tool above is parsed by `<plugin_root>/skills/tdd-guardian/references/workflows/shared/parse-mutation.md`. Stryker, Stryker.NET, and stryker4s share one schema (mutation-testing-elements), so a tool not on this list is still supported if it can emit that format — configure that reporter rather than asking for a new parser.
 
 Ecosystems with no mature mutation tool — Elixir (muzak is limited/commercial), Erlang, Haskell (MuCheck is unmaintained), Dart (`mutation_test` is immature) — should leave `requireMutation: false`. That is a fact about the ecosystem, not a gap to paper over; rely on the assertion-hierarchy rules in `policy-core` instead.
 
@@ -164,6 +159,6 @@ Does NOT cover:
 
 | Question | Skill |
 |----------|-------|
-| How is line and branch coverage enforced? | `references/policies/coverage-gate/policy.md` |
-| What assertion level should the killing test use? | `references/policies/policy-core/policy.md` |
-| Which lane does the killing test belong in? | `references/policies/lane-policy/policy.md` |
+| How is line and branch coverage enforced? | `<plugin_root>/skills/tdd-guardian/references/policies/coverage-gate/policy.md` |
+| What assertion level should the killing test use? | `<plugin_root>/skills/tdd-guardian/references/policies/policy-core/policy.md` |
+| Which lane does the killing test belong in? | `<plugin_root>/skills/tdd-guardian/references/policies/lane-policy/policy.md` |

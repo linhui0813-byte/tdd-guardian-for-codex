@@ -13,7 +13,10 @@
       "name": "unit",
       "description": "In-process tests. No external services.",
       "command": "pnpm exec vitest run --coverage",
-      "gateOn": ["stop", "commit"],
+      "gateOn": [
+        "stop",
+        "commit"
+      ],
       "coverage": "include",
       "coverageSummaryPath": "coverage/coverage-summary.json",
       "probeCommand": "pnpm exec vitest list",
@@ -29,5 +32,8 @@
   "coverageMode": "absolute",
   "requireMutation": false,
   "mutationCommand": "",
-  "mutationGateOn": ["stop"]
+  "mutationGateOn": [
+    "stop"
+  ],
+  "criticalPaths": []
 }

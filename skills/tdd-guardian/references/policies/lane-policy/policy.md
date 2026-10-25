@@ -1,11 +1,6 @@
----
-name: lane-policy
-description: Test-level taxonomy — which behavior belongs in a unit, integration, e2e, or contract lane, how lanes bind to gate triggers, and how each lane participates in coverage. Use when designing a test matrix, configuring lanes, or deciding where a given test should live.
----
-
 # Lane Policy
 
-A **lane** is one test tier with its own command, its own trigger, and its own coverage participation. Lanes exist because test tiers have genuinely different costs: a suite that takes 90 seconds and needs a browser cannot gate every Codex turn, and a suite that takes 900 milliseconds should not wait for one that does.
+A **lane** is one test tier with its own command, its own trigger, and its own coverage participation. Lanes exist because test tiers have genuinely different costs: a suite that takes 90 seconds and needs a browser cannot gate every task completion, and a suite that takes 900 milliseconds should not wait for one that does.
 
 This is a separate axis from the assertion hierarchy in `policy-core`. That hierarchy asks *how strongly does this test verify anything*. This skill asks *at what level does this behavior get verified*. A test can be Level 1 in a unit lane or Level 7 in an e2e lane; both questions must be answered for every test.
 
@@ -74,7 +69,7 @@ Bind a lane by its cost and its dependencies, not by its name:
 
 Trigger semantics:
 
-- **`stop`** — the hook *runs* these lanes at the end of a Codex turn. This is the tight loop; anything slow here makes the plugin unusable.
+- **`stop`** — the inner-loop lanes. In Claude Code a `Stop` hook *runs* them when a task finishes; Codex has no such event, so in Codex `$tdd-guardian implement` and `$tdd-guardian gate stop` run them. This is the tight loop; anything slow here makes the plugin unusable.
 - **`commit`** — checked for *freshness* before `git commit`. Not run automatically.
 - **`push`** — checked for freshness before `git push`, `gh pr create`, and publish commands. **`push` subsumes `commit`**: pushing requires everything a commit requires, plus the push lanes.
 - **`manual`** — only ever runs via `$tdd-guardian gate <lane>`.
@@ -106,7 +101,7 @@ An e2e suite that walks the whole application does not make the unit lane's unco
 | An integration lane that mocks the database | It is a unit lane wearing a costume | Use a real DB or testcontainers |
 | `optional: true` to silence a red suite | Hides a real defect behind a flag | Fix the suite |
 | A lane per package in a monorepo with a workspace runner | N× the setup cost, N× the config to maintain | One aggregate command |
-| Retries as the fix for flakiness | Converts a signal into noise | Fix the race; see `tooling-catalog/references/e2e.md` |
+| Retries as the fix for flakiness | Converts a signal into noise | Fix the race; see `<plugin_root>/skills/tdd-guardian/references/policies/tooling-catalog/references/e2e.md` |
 | Thresholds set per lane | Recreates the coupling lanes remove | Threshold the merged total |
 
 ## Minimum viable configuration
@@ -131,7 +126,7 @@ Does NOT cover:
 
 | Question | Skill |
 |----------|-------|
-| How strongly does this test verify anything? | `references/policies/policy-core/policy.md` |
-| What command runs this lane in language X? | `references/policies/tooling-catalog/policy.md` |
-| How are multi-lane coverage reports merged? | `references/policies/coverage-gate/policy.md` |
-| How is a lane detected and written to config? | `workflows/shared/detect-tooling.md` |
+| How strongly does this test verify anything? | `<plugin_root>/skills/tdd-guardian/references/policies/policy-core/policy.md` |
+| What command runs this lane in language X? | `<plugin_root>/skills/tdd-guardian/references/policies/tooling-catalog/policy.md` |
+| How are multi-lane coverage reports merged? | `<plugin_root>/skills/tdd-guardian/references/policies/coverage-gate/policy.md` |
+| How is a lane detected and written to config? | `<plugin_root>/skills/tdd-guardian/references/workflows/shared/detect-tooling.md` |

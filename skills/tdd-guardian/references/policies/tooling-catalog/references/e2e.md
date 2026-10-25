@@ -1,6 +1,6 @@
 # End-to-end, integration, contract, and load tooling
 
-Cross-language reference for the lanes above unit level. For which behaviour belongs at which level, see the `references/policies/lane-policy/policy.md` skill; this file is the tooling.
+Cross-language reference for the lanes above unit level. For which behaviour belongs at which level, see the `<plugin_root>/skills/tdd-guardian/references/policies/lane-policy/policy.md` skill; this file is the tooling.
 
 ## Browser-driven e2e
 

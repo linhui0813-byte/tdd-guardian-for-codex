@@ -1,30 +1,14 @@
----
-name: audit-mutation
-description: |
-  Apply the tdd-mutation-auditor role to run mutation testing and list surviving mutants. Skips cleanly if `requireMutation=false` or the tool is not installed.
+Run `<plugin_root>/skills/tdd-guardian/references/roles/tdd-mutation-auditor.md`.
 
-  <example>
-  user: $tdd-guardian audit-mutation
-  assistant: |
-    Loading config. Since `requireMutation=true` and `mutationCommand=npx stryker run`, I apply the tdd-mutation-auditor. It verifies Stryker is installed, runs it, parses `reports/mutation/mutation.json`, lists surviving mutants with file:line + mutator type, and proposes boundary tests to kill each one. Returns PASS/FAIL/SKIPPED.
-  </example>
+## Plugin root
 
-  <example>
-  user: $tdd-guardian audit-mutation
-  assistant: |
-    `requireMutation=false` in config. I respond with: "Mutation gate disabled (requireMutation=false). To enable, run $tdd-guardian init or edit .codex/tdd-guardian/config.json." and stop — no apply, no tool install prompts.
-  </example>
-argument-hint: ""
-model: inherit
----
-
-Apply the `tdd-mutation-auditor` role.
+Use `plugin_root` resolved by the main `skills/tdd-guardian/SKILL.md`. Replace `<plugin_root>` with that absolute path before running commands. Check each script exists before running it; if it is missing, report the path error. The project workspace is separate from the plugin root.
 
 ## Steps
 
 ### Step 1 — Load config
 
-Follow `workflows/shared/load-config.md`.
+Follow `<plugin_root>/skills/tdd-guardian/references/workflows/shared/load-config.md`.
 
 ### Step 2 — Enabled check
 
@@ -35,13 +19,13 @@ Mutation gate disabled (requireMutation=false).
 To enable: run $tdd-guardian init, or set requireMutation=true and mutationCommand in .codex/tdd-guardian/config.json.
 ```
 
-And STOP. Do not apply the role.
+And STOP. Do not run the auditor.
 
 If `requireMutation=true` but `mutationCommand` is empty, stop with the validation message from `load-config.md`.
 
 ### Step 3 — Tool availability pre-check
 
-Before applying, run the tool's version probe via Bash to verify installation:
+Before running the auditor, run the tool's version probe in the shell to verify installation:
 
 | Tool detected | Probe command |
 |---------------|---------------|
@@ -64,12 +48,12 @@ Install:
 
 Do NOT proceed with the auditor when the tool is absent.
 
-### Step 4 — Apply the auditor
+### Step 4 — Run the auditor
 
-Read `references/roles/tdd-mutation-auditor.md`, adopt that role in the current Codex turn, and provide it with:
+Run `<plugin_root>/skills/tdd-guardian/references/roles/tdd-mutation-auditor.md` (`<plugin_root>/skills/tdd-guardian/references/roles/tdd-mutation-auditor.md`) — in a subagent if Codex offers one, otherwise inline and within its boundaries — with:
 - The tool name detected in step 3.
 - The configured `mutationCommand`.
-- A directive: "Run the command. Parse the output via `workflows/shared/parse-mutation.md`. List surviving mutants with file:line, original/replacement, and a boundary-test fix for each. Do NOT silently ignore mutants — equivalent mutants must be declared explicitly in the report."
+- A directive: "Run the command. Parse the output via `<plugin_root>/skills/tdd-guardian/references/workflows/shared/parse-mutation.md`. List surviving mutants with file:line, original/replacement, and a boundary-test fix for each. Do NOT silently ignore mutants — equivalent mutants must be declared explicitly in the report."
 
 ### Step 5 — Persist result
 
@@ -117,3 +101,17 @@ Write the auditor's report to `.codex/tdd-guardian/mutation-{YYYYMMDD-HHMMSS}.md
 - Output: mutation report file + normalized summary in `state.json`.
 - Side effects: runs the mutation command (may be SLOW — minutes to hours).
 - Failure modes: disabled → clean skip; tool missing → install hint + stop; runner error → stop with evidence.
+
+## Examples
+
+<example>
+user: $tdd-guardian audit-mutation
+assistant: |
+  Loading config. Since `requireMutation=true` and `mutationCommand=npx stryker run`, I run the tdd-guardian mutation auditor. It verifies Stryker is installed, runs it, parses `reports/mutation/mutation.json`, lists surviving mutants with file:line + mutator type, and proposes boundary tests to kill each one. Returns PASS/FAIL/SKIPPED.
+</example>
+
+<example>
+user: $tdd-guardian audit-mutation
+assistant: |
+  `requireMutation=false` in config. I respond with: "Mutation gate disabled (requireMutation=false). To enable, run $tdd-guardian init or edit .codex/tdd-guardian/config.json." and stop — no dispatch, no tool install prompts.
+</example>

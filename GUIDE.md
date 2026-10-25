@@ -21,13 +21,13 @@
    $tdd-guardian Plan this change: <task>.
    ```
 
-2. Design the test matrix:
+2. Design the test matrix and attack it before implementation:
 
    ```text
    $tdd-guardian Design tests for the latest TDD plan.
    ```
 
-3. Implement one work item with red-green-refactor:
+3. Implement one work item with red-green-refactor and an optional red receipt:
 
    ```text
    $tdd-guardian Implement WI-1 from the latest plan.
@@ -80,3 +80,7 @@ The guardian rejects a report with zero measurable lines outside bootstrap. Chec
 ### Emergency bypass
 
 Use the configured `TDD_GUARD_BYPASS=1` only with explicit user consent for the current operation. The bypass skips all gates and is recorded in state.
+
+## Version 0.2.0 upgrade
+
+Existing `.codex/tdd-guardian/config.json` and `state.json` stay in place. Installing the package does not enable blocking, create critical-path policies, run project suites, or rewrite saved passes. Read the shipped `skills/tdd-guardian/references/workflows/receipts.md` for the receipt CLI. Keep receipts, locks, and temporary state writes out of Git.

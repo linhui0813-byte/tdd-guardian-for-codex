@@ -1,6 +1,6 @@
 {
   "name": "tdd-guardian-for-codex",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Codex-native TDD Guardian with test-lane, coverage, mutation, commit, push, and end-of-turn quality gates.",
   "author": {
     "name": "linhui0813-byte",
@@ -24,7 +24,11 @@
     "longDescription": "Plan, design, implement, audit, and review changes under strict test-driven development, with deterministic Codex hooks for turn, commit, and push gates.",
     "developerName": "linhui0813-byte",
     "category": "Developer Tools",
-    "capabilities": ["Skills", "Hooks", "Testing"],
+    "capabilities": [
+      "Skills",
+      "Hooks",
+      "Testing"
+    ],
     "websiteURL": "https://github.com/linhui0813-byte/tdd-guardian-for-codex",
     "defaultPrompt": [
       "Use $tdd-guardian to initialize TDD gates in this repository.",

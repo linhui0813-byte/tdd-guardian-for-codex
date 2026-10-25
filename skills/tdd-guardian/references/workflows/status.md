@@ -1,34 +1,18 @@
----
-name: status
-description: |
-  Read-only status report — shows last-run coverage %, mutation score, review verdict, and per-work-item state from `.codex/tdd-guardian/state.json`. Does NOT run any role workflow, test, or gate.
-
-  <example>
-  user: $tdd-guardian status
-  assistant: |
-    Reading `.codex/tdd-guardian/state.json` and the most recent `plan-*.md`, `tests-*.md`, `coverage-*.md`, `mutation-*.md`, `review-*.md` files. I render a summary table: last coverage run (timestamp + verdict + totals), last mutation run (score + survivors), last review (severity counts + verdict), and per-work-item state (DONE / BLOCKED / FAILED-VERIFICATION / not-started). No role workflows run; no tests or coverage commands are run.
-  </example>
-
-  <example>
-  user: $tdd-guardian status
-  assistant: |
-    `.codex/tdd-guardian/state.json` does not exist. I respond with: "No TDD Guardian runs recorded yet. Start with $tdd-guardian plan or $tdd-guardian workflow." and stop.
-  </example>
-argument-hint: ""
-model: inherit
----
-
-Read-only status reporter. No role workflows run. No test suites run.
+Read-only status reporter. No other tdd-guardian skills run. No test suites run.
 
 The only shell commands permitted are read-only git queries used for freshness
 (`git rev-parse`, `git diff --name-only`, `git status --porcelain`). Never run a
 lane command from here — that is `$tdd-guardian gate`.
 
+## Plugin root
+
+Use `plugin_root` resolved by the main `skills/tdd-guardian/SKILL.md`. Replace `<plugin_root>` with that absolute path before running commands. Check each script exists before running it; if it is missing, report the path error. The project workspace is separate from the plugin root.
+
 ## Steps
 
 ### Step 1 — Load config (soft)
 
-Unlike other commands, DO NOT hard-fail on missing config — the user may be invoking `$tdd-guardian status` to diagnose exactly that. Try `workflows/shared/load-config.md`, but if it stops, downgrade to: `Config missing or disabled. Run $tdd-guardian init to initialize.` and continue rendering whatever state exists.
+Unlike other commands, DO NOT hard-fail on missing config — the user may be invoking `$tdd-guardian status` to diagnose exactly that. Try `<plugin_root>/skills/tdd-guardian/references/workflows/shared/load-config.md`, but if it stops, downgrade to: `Config missing or disabled. Run $tdd-guardian init to initialize.` and continue rendering whatever state exists.
 
 ### Step 2 — Read state
 
@@ -36,7 +20,7 @@ Try to read `.codex/tdd-guardian/state.json`. If missing, respond: `No TDD Guard
 
 If present, parse it. Expected keys (schema v2):
 - `lanes` — map of lane name → `{last_passed_at, last_run_at, last_head_sha, last_result, duration_ms}`
-- `coverage` — `{timestamp, status, method, approximate, formats, totals}`
+- `coverage` — `{timestamp, status, method, approximate, formats, totals, criticalPaths}`
 - `mutation` — `{timestamp, status, command}`
 - `baseline` — `{branch, recorded_at, coverage}` (no-decrease mode only)
 - `workItems` — map of WI-N → `{status, testFiles, sourceFiles, updatedAt}`
@@ -46,6 +30,8 @@ If present, parse it. Expected keys (schema v2):
 A schema v1 state file has a single `last_gate_passed_at` instead of `lanes`. Render it as one `unit` lane and note that the state predates lanes.
 
 Missing keys mean "not run yet" — render as `—`.
+
+Also try `.codex/tdd-guardian/receipts.json`. If present, read `receipts[]` for the red-receipt verdicts (`SEPARATION-HELD`, `SEPARATION-BROKEN`, or unverified). If absent, that dimension is unmeasured, not failed.
 
 ### Step 2b — Compute freshness per lane
 
@@ -75,6 +61,25 @@ Identify the most recent of each by filename (ISO-sortable).
 **Config**: {present | missing} — schema v{n}, {N} lane(s)
 **Enforcement**: stop {on|off} / commit-push blocking {on|off} ({staleGateAction})
 **Mutation**: {required | disabled}{if required: " — " + mutationCommand}
+**Critical paths**: {N configured | none}
+
+## Verification gaps
+
+{Render this section on every run, before the lane table. It names what is NOT
+being verified, which no other section does — every table below reports on checks
+that are switched on, so a check that was never configured is invisible in all of
+them. Omit a row only when it does not apply.}
+
+| Gap | State | Why it matters |
+|-----|-------|----------------|
+| Mutation testing | not configured | Coverage measures what ran, not what the tests would catch. Mutation is the only gate that measures whether an assertion would notice a wrong implementation. `tooling-catalog` names the tool for this language. |
+| Critical paths | none configured | One repo-wide threshold treats the payment core and the logging helper alike. Set `criticalPaths` for the code most expensive to get wrong. |
+| Red receipts | {N recorded / none} | Without a receipt, specification–implementation separation is unverified. Not a violation — an unmeasured dimension. |
+| Property tests | {detected | none detected} | Grep the test tree for the language's property library from `tooling-catalog`. Absence is worth naming for a repo with conservation laws or round-trips. |
+
+{State each gap as unmeasured, never as failed. A dimension nobody configured is
+not a defect — but leaving it unnamed lets a green board imply coverage it does
+not have, which is the failure this whole plugin exists to prevent.}
 
 ## Lanes
 
@@ -111,6 +116,26 @@ rather than implying gates passed.}
 | Review    | {YYYY-MM-DD HH:MM}   | APPROVED / BLOCKED / etc. | High {n} / Medium {n} / Low {n} |
 
 {If any section has no recorded run, show "—" in all columns for that row.}
+
+### Critical paths
+
+| Glob | Files | Coverage | Threshold | Verdict |
+|------|-------|----------|-----------|---------|
+| `src/payments/**` | 7 | L 98.2% / B 94.0% | 100 / 100 | **FAIL** |
+
+{From `state.coverage.criticalPaths`. A glob with `matchedFiles: 0` renders as
+**`matched nothing`** and counts as a FAIL — a rule enforcing nothing must not look
+enforced. Omit this table only when no criticalPaths are configured; the
+Verification gaps section already says so in that case.}
+
+### Specification separation
+
+| Work item | Red | Verdict | Files changed between red and green |
+|-----------|-----|---------|-------------------------------------|
+| WI-1 | assertion-failure | SEPARATION-HELD | — |
+
+{From `receipts.json`. Omit when the file is absent — the Verification gaps
+section covers that case. Never render a missing receipt as a failure.}
 {If coverage method is "weighted", add: "Coverage was combined as a weighted
 average, not a union — lines covered by more than one lane are counted more than
 once. Emit LCOV or Cobertura from every contributing lane for an exact merge."}
@@ -149,6 +174,8 @@ Omit the section when there are none — never suppress them when there are.}
 - Matrix exists, one or more WIs not DONE → "Run $tdd-guardian implement WI-{next}"
 - All WIs DONE, no coverage run → "Run $tdd-guardian audit-coverage"
 - Coverage PASS, mutation required but not run → "Run $tdd-guardian audit-mutation"
+- Coverage PASS and mutation NOT configured → "Coverage measures what ran, not what your tests would catch. Configure a mutation lane — $tdd-guardian init proposes one for this language."
+- A critical path FAILS while the repo total passes → "Critical-path coverage failed. The repo average is hiding it; see the critical-paths table."
 - All gates PASS, no review → "Run $tdd-guardian review"
 - Push lanes stale → "Run $tdd-guardian gate push before pushing"
 - All gates PASS + review APPROVED → "Ready to commit. Gates are fresh."
@@ -159,5 +186,19 @@ Omit the section when there are none — never suppress them when there are.}
 
 - Input: none.
 - Output: one markdown status report printed to the user.
-- Side effects: NONE. No files written, no role workflows run, no shell commands run.
+- Side effects: none. No files written, no other tdd-guardian skills run, no lane commands run; the only shell commands are the read-only git queries used for freshness.
 - Failure modes: missing config → soft warning + continue; missing state.json → short "no runs yet" message.
+
+## Examples
+
+<example>
+user: $tdd-guardian status
+assistant: |
+  Reading `.codex/tdd-guardian/state.json` and the most recent `plan-*.md`, `tests-*.md`, `coverage-*.md`, `mutation-*.md`, `review-*.md` files. I render a summary table: last coverage run (timestamp + verdict + totals), last mutation run (score + survivors), last review (severity counts + verdict), and per-work-item state (DONE / BLOCKED / FAILED-VERIFICATION / not-started). No agents are dispatched; no tests or coverage commands are run.
+</example>
+
+<example>
+user: $tdd-guardian status
+assistant: |
+  `.codex/tdd-guardian/state.json` does not exist. I respond with: "No TDD Guardian runs recorded yet. Start with $tdd-guardian plan or $tdd-guardian workflow." and stop.
+</example>

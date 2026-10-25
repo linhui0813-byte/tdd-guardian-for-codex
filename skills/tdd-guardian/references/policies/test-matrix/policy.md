@@ -1,8 +1,3 @@
----
-name: test-matrix
-description: Build a comprehensive test matrix for changed behavior with explicit assertion strategy per case.
----
-
 # Test Matrix
 
 For each changed unit/function, provide this matrix before coding tests:
@@ -15,14 +10,26 @@ For each changed unit/function, provide this matrix before coding tests:
 4. **Failure paths**: downstream failure, timeout, retries exhausted.
 5. **State transitions**: create/update/delete/retry/idempotency.
 6. **Determinism**: stable behavior across repeated runs.
+7. **Properties and invariants**: the laws the unit must never violate, over generated inputs rather than listed ones.
+
+## The law question, once per unit
+
+Before writing cases, answer this for the unit as a whole:
+
+> Does this unit have a **law** — a conserved quantity, a round-trip, an idempotent operation, a total ordering, a monotonic relation, or a stated invariant?
+
+If yes, at least one case must be S4-S6 and must cover it. If no, write **"No law: {why}"** and move on. Categories 1-6 alone specify examples; a unit with a law and only examples is under-specified however many examples it has. See `policy-core` for the S1-S6 levels and `tooling-catalog` for the property library in this language.
 
 ## Output format
 
 ```markdown
 ## Test Matrix: <unit>
 
+**Law**: <the invariant this unit must never violate> | No law: <why>
+
 ### Case: <descriptive name>
-- **Category**: success|boundary|guard|failure|state|determinism
+- **Category**: success|boundary|guard|failure|state|determinism|property
+- **Spec level**: S1-S6 per `policy-core` — how much of the input space this case claims
 - **Lane**: unit|integration|e2e|contract — per `lane-policy`, the cheapest lane where a failure would be real
 - **Input**: <concrete input values>
 - **Expected output**: <exact return value or thrown error>
@@ -32,11 +39,11 @@ For each changed unit/function, provide this matrix before coding tests:
 - **Paired integration test**: <required whenever Mock boundary is not "none" — name the integration-lane case covering the real path>
 ```
 
-Every case carries both a lane and an assertion level. They are independent axes: the lane says where the behavior is verified, the assertion level says how strongly. A case missing either is incomplete.
+Every case carries a lane, an assertion level, and a spec level. The three are independent axes: the lane says *where* the behavior is verified, the assertion level says *how strongly*, and the spec level says *how much of the input space* is claimed. A case missing any of the three is incomplete.
 
 ## Assertion strategy guide
 
-Follow the assertion hierarchy and mock rules in `references/policies/policy-core/policy.md`.
+Follow the assertion hierarchy and mock rules defined in the `policy-core` skill.
 
 For each test case, explicitly state HOW you will verify it, preferring Level 1-5 (behavior) assertions over Level 6-7 (wiring) assertions per `policy-core`:
 
@@ -71,12 +78,15 @@ If you mock, you MUST also name an `integration`-lane case that exercises the re
 
 ## Scope
 
-Covers the matrix format and the per-case fields the designer must fill: category, lane, input, expected output, observable side effect, assertion strategy, mock boundary, paired integration test.
+Covers the matrix format, the per-unit law question, and the per-case fields the designer must fill: category, lane, spec level, input, expected output, observable side effect, assertion strategy, mock boundary, paired integration test.
 
 Does NOT cover:
 
 | Question | Skill |
 |----------|-------|
-| What do assertion Levels 1-7 mean? | `references/policies/policy-core/policy.md` |
-| Which lane does a given behavior belong in? | `references/policies/lane-policy/policy.md` |
-| How is the finished matrix reviewed? | `references/policies/review-gate/policy.md` |
+| What do assertion Levels 1-7 mean? | `<plugin_root>/skills/tdd-guardian/references/policies/policy-core/policy.md` |
+| What do specification levels S1-S6 mean? | `<plugin_root>/skills/tdd-guardian/references/policies/policy-core/policy.md` |
+| Which lane does a given behavior belong in? | `<plugin_root>/skills/tdd-guardian/references/policies/lane-policy/policy.md` |
+| Which property library fits this language? | `<plugin_root>/skills/tdd-guardian/references/policies/tooling-catalog/policy.md` |
+| How is the finished matrix reviewed? | `<plugin_root>/skills/tdd-guardian/references/policies/review-gate/policy.md` |
+| Who attacks the finished matrix? | `<plugin_root>/skills/tdd-guardian/references/roles/tdd-spec-adversary.md` |
