@@ -3,3 +3,6 @@ node_modules/
 __pycache__/
 *.pyc
 .codex/tdd-guardian/state.json
+.codex/tdd-guardian/receipts.json
+.codex/tdd-guardian/.receipts.lock/
+.codex/tdd-guardian/.*.tmp

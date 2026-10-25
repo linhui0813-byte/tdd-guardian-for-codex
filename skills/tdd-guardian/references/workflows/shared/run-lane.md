@@ -1,20 +1,22 @@
----
-description: "Shared: execute one lane (setup, command, coverage report, teardown) and classify the outcome, distinguishing runner failure from test failure"
-user-invocable: false
----
+## Plugin root
+
+Use `plugin_root` resolved by the main `skills/tdd-guardian/SKILL.md`. Replace `<plugin_root>` with that absolute path before running commands. Check each script exists before running it; if it is missing, report the path error. The project workspace is separate from the plugin root.
+
 <!-- Shared partial: lane execution wrapper -->
 <!-- Referenced by: implement, audit-coverage, gate, workflow. Do not use standalone. -->
 
 ## Purpose
 
-Run one lane and classify the result. Callers depend on one distinction above all others: **a crashed runner is not a failing test**. A fix-it agent can act on the second and will waste a cycle on the first.
+Run one lane and classify the result. Callers depend on one distinction above all others: **a crashed runner is not a failing test**. A fix-it pass can act on the second and will waste a cycle on the first.
 
 The same logic is implemented in `scripts/tdd-guardian/lib/lanes.js` (`runLane`) and `lib/exec.js` (`run`, `classify`). Prefer running it over re-implementing:
 
 ```bash
+[ -f '<plugin_root>/scripts/tdd-guardian/lib/config.js' ] || { echo 'tdd-guardian: scripts/tdd-guardian/lib/config.js not found under the plugin root' >&2; exit 1; }
+[ -f '<plugin_root>/scripts/tdd-guardian/lib/lanes.js' ] || { echo 'tdd-guardian: scripts/tdd-guardian/lib/lanes.js not found under the plugin root' >&2; exit 1; }
 node -e "
-const {load}=require('<plugin-root>/scripts/tdd-guardian/lib/config.js');
-const {runLane,describeResult}=require('<plugin-root>/scripts/tdd-guardian/lib/lanes.js');
+const {load}=require('<plugin_root>/scripts/tdd-guardian/lib/config.js');
+const {runLane,describeResult}=require('<plugin_root>/scripts/tdd-guardian/lib/lanes.js');
 const {config}=load(process.cwd());
 const lane=config.lanes.find(l=>l.name==='<lane>');
 console.log(JSON.stringify(runLane(lane,process.cwd()),null,2));
@@ -91,7 +93,7 @@ The ratchet is one-way. Diagnose the two differently: telling a brand-new projec
 ### Step 7 — Coverage (lanes with `coverage: "include"`)
 
 1. If `coverageReportCommand` is set, run it now. A failure is `phase: "coverage-report"`.
-2. Read `coverageSummaryPath` and parse it per `workflows/shared/parse-coverage.md`.
+2. Read `coverageSummaryPath` and parse it per `<plugin_root>/skills/tdd-guardian/references/workflows/shared/parse-coverage.md`.
 3. A missing or unparseable report fails the lane with status `coverage-missing` — never treat it as zero coverage, and never skip the check.
 
 ### Step 8 — Teardown
@@ -126,10 +128,10 @@ Attempt extraction from known runner formats (Vitest, Jest, pytest, cargo, Suref
 | Status | Caller action |
 |--------|---------------|
 | `pass` | Continue |
-| `fail` | Actionable — apply a fix, or report the failing tests |
+| `fail` | Actionable — dispatch a fix, or report the failing tests |
 | `no-tests` | Stop. Test discovery is misconfigured; adding code will not help |
 | `coverage-missing` | Stop. The coverage command or path is wrong |
-| `runner-missing` / `runner-error` / `killed` / `timeout` | Stop. The environment is broken. **Do NOT apply an automatic code fix** — it will edit correct code to chase a broken runner |
+| `runner-missing` / `runner-error` / `killed` / `timeout` | Stop. The environment is broken. **Do NOT start a fix-it pass** — it will edit correct code to chase a broken runner |
 | `interrupted` | Stop silently; the user cancelled |
 
 This partial produces no user-facing output on its own. The caller decides how to render it.

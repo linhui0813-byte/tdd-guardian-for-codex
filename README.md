@@ -1,6 +1,6 @@
 # TDD Guardian for Codex
 
-[![tests 178 passing](https://img.shields.io/badge/tests-178%20passing-success)](https://github.com/linhui0813-byte/tdd-guardian-for-codex/actions)
+[![tests 321 passing](https://img.shields.io/badge/tests-321%20passing-success)](https://github.com/linhui0813-byte/tdd-guardian-for-codex/actions)
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-111827)](https://learn.chatgpt.com/docs/build-plugins)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 
@@ -95,6 +95,12 @@ $tdd-guardian Audit coverage, then review test quality.
 
 An uninitialized project is silent. A lane with no historical tests is visibly `BOOTSTRAP`; after it discovers a test once, a future zero-test run is a hard failure.
 
+## Specification quality and red receipts
+
+The test matrix separates assertion quality from specification strength (S1-S6). Units with a law need a property or invariant case; the read-only specification adversary attacks the matrix before implementation. `criticalPaths` can tighten coverage and require mutation testing on named globs. `requireSpecLevel` is evaluated by the designer and reviewer, not by a deterministic hook.
+
+The implementation workflow records a failing lane before code changes and verifies its recorded test lines after green. Receipts live in ignored `.codex/tdd-guardian/receipts.json`; absent evidence means unverified, and receipt findings stay report-only. They do not prove which test caused a lane failure or whether implementation already existed. Ask `$tdd-guardian` to record, verify, or show receipts.
+
 ## Coverage and languages
 
 Parsers support Istanbul summary, Istanbul final, coverage.py, LCOV, Cobertura, JaCoCo, Go cover profiles, Clover, and SimpleCov. The bundled tooling catalog covers JavaScript/TypeScript, Python, JVM languages, .NET, Go, Rust, native toolchains, Ruby/PHP/Perl/Lua, Elixir/Erlang, Haskell/OCaml, Dart/Flutter, R, Julia, shell, and common end-to-end tools.
@@ -117,9 +123,17 @@ The `upstream update` GitHub Actions workflow checks [the original Claude reposi
 
 When either value changes, the workflow opens or updates a review pull request containing the exact old and new versions, commits, and upstream comparison link. It updates provenance only: upstream Claude files are never copied mechanically, and the workflow never auto-merges, installs, or publishes.
 
-The upstream `0.9.0` review ports the fail-loud gate fixes that apply to Codex `Stop`: unreachable enforcement now blocks, incomplete coverage merges fail, bootstrap exemptions apply only to coverage-contributing lanes, and coverage-gate exceptions produce a blocking verdict. The additive `0.9.0` critical-path, specification-strength, adversarial-review, and red-receipt features remain explicitly deferred until they receive Codex-native designs and regression coverage.
+Version `0.2.0` reviews upstream `0.10.2` at `188ee8c9df5682a0dad37d35444e40fcbe0bb8f8` and ports the previously deferred critical-path, specification-strength, adversarial-review, and red-receipt features. It keeps this port's `.codex/tdd-guardian/` state, single `$tdd-guardian` entry point, and opt-in Codex `Stop` hook with one bounded continuation. Upstream's separate Codex skill layout, shared `.claude` state, and omission of `Stop` are intentional differences; existing projects need no configuration migration.
 
 ## Release notes
+
+### 0.2.0
+
+- Port per-path coverage and mutation requirements, including failures for unmatched globs and inexact critical-path metrics.
+- Add optional red receipts with workspace containment, atomic writes, bounded locking, and report-only specification findings.
+- Add S1-S6 specification levels and adversarial matrix review before implementation.
+- Resolve workflow files from the plugin root and keep warnings neutral about commit/push permission.
+- Preserve project configuration, Codex Stop continuation protection, and disabled enforcement defaults.
 
 ### 0.1.1
 
@@ -129,4 +143,4 @@ The upstream `0.9.0` review ports the fail-loud gate fixes that apply to Codex `
 
 ## Provenance and license
 
-Core port based on TDD Guardian for Claude `0.8.1`, upstream commit `0b0bb40f0e560438a17f0742be72d846df140540`. Reviewed through upstream `0.9.0`, commit `4e6e3c20069125e6d81cc7ca7227876e3911f1b4`, with the applicable fail-loud fixes ported as described above. Original work copyright © 2026 Xiaolai Li. Codex port maintained by `linhui0813-byte` under the same [ISC License](LICENSE).
+Core port based on TDD Guardian for Claude `0.8.1`, upstream commit `0b0bb40f0e560438a17f0742be72d846df140540`. Reviewed and adapted through upstream `0.10.2`, commit `188ee8c9df5682a0dad37d35444e40fcbe0bb8f8`; this port's version is `0.2.0`, independent of upstream's version. Original work copyright © 2026 Xiaolai Li. Codex port maintained by `linhui0813-byte` under the same [ISC License](LICENSE).

@@ -1,7 +1,7 @@
----
-description: "Shared: parse and merge coverage across 9 formats — Istanbul, coverage.py, LCOV, Cobertura, JaCoCo, Clover, go-cover, SimpleCov"
-user-invocable: false
----
+## Plugin root
+
+Use `plugin_root` resolved by the main `skills/tdd-guardian/SKILL.md`. Replace `<plugin_root>` with that absolute path before running commands. Check each script exists before running it; if it is missing, report the path error. The project workspace is separate from the plugin root.
+
 <!-- Shared partial: coverage parser -->
 <!-- Referenced by: audit-coverage, status, gate, workflow. Do not use standalone. -->
 
@@ -12,8 +12,9 @@ Read each contributing lane's coverage report, normalize it, and merge the resul
 This is implemented in `scripts/tdd-guardian/lib/coverage.js` and covered by `tests/coverage.test.js`. **Run it rather than parsing by hand** — hand-parsing XML and LCOV in a prompt is where wrong numbers come from:
 
 ```bash
+[ -f '<plugin_root>/scripts/tdd-guardian/lib/coverage.js' ] || { echo 'tdd-guardian: scripts/tdd-guardian/lib/coverage.js not found under the plugin root' >&2; exit 1; }
 node -e "
-const c=require('<plugin-root>/scripts/tdd-guardian/lib/coverage.js');
+const c=require('<plugin_root>/scripts/tdd-guardian/lib/coverage.js');
 const r=['<path1>','<path2>'].map(p=>c.parseFile(p,process.cwd()));
 const errs=r.filter(x=>x.error).map(x=>x.error);
 if(errs.length){console.error(errs.join('\n'));process.exit(1)}

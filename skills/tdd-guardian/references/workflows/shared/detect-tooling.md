@@ -1,9 +1,6 @@
----
-description: "Shared: detect test lanes, runners, coverage tools, and e2e suites from CI config, manifests, and test topology — then verify each by dry-run probe"
-user-invocable: false
----
+<!-- Codex tooling detection reference. -->
 <!-- Shared partial: tooling detection -->
-<!-- Referenced by: init (primary), probe, gate. Do not use standalone. -->
+<!-- Referenced by: init (primary), probe, and the lane-policy and tooling-catalog skills. Do not use standalone. -->
 
 ## Purpose
 
@@ -25,7 +22,7 @@ Work down this list. Stop when you have a lane's command; use lower steps only f
 
 ### Step 1 — Read the CI config first
 
-Glob for, in order: `.github/workflows/*.yml`, `.github/workflows/*.yaml`, `.gitlab-ci.yml`, `.circleci/config.yml`, `azure-pipelines.yml`, `Jenkinsfile`, `.buildkite/*.yml`, `Makefile`, `Justfile`, `Taskfile.yml`, `mise.toml`, `package.json` scripts.
+List which of these exist, in order (one `ls`/`find` command): `.github/workflows/*.yml`, `.github/workflows/*.yaml`, `.gitlab-ci.yml`, `.circleci/config.yml`, `azure-pipelines.yml`, `Jenkinsfile`, `.buildkite/*.yml`, `Makefile`, `Justfile`, `Taskfile.yml`, `mise.toml`, `package.json` scripts.
 
 This is ground truth. Extract:
 
@@ -39,7 +36,7 @@ Map each distinct invocation to a lane name: `unit`, `integration`, `e2e`, `cont
 
 ### Step 2 — Confirm the runner from manifests and lockfiles
 
-Use the `tooling-catalog` policy. Read its `policy.md` index to pick the right reference file for the ecosystem you found, then read only that file. It carries, per language: manifest fingerprints, runner detection, coverage tool, coverage output format and path, mutation tool, and the probe command.
+Use `<plugin_root>/skills/tdd-guardian/references/policies/tooling-catalog/policy.md` (`<plugin_root>/skills/tdd-guardian/references/policies/tooling-catalog/policy.md`). Read its index to pick the right reference file for the ecosystem you found, then read only that file. It carries, per language: manifest fingerprints, runner detection, coverage tool, coverage output format and path, mutation tool, property-testing library, and the probe command.
 
 Detect the package manager from the lockfile, never from a guess:
 
@@ -59,7 +56,7 @@ Detect the package manager from the lockfile, never from a guess:
 
 ### Step 3 — Read the test topology
 
-Glob for test directories and file patterns to find lanes that CI does not run, or runs from elsewhere:
+Search (`find`, `rg --files`) for test directories and file patterns to find lanes that CI does not run, or runs from elsewhere:
 
 - Directory split: `tests/unit/` vs `tests/integration/` vs `tests/e2e/`, `spec/` vs `features/`, `src/**/__tests__/` vs `e2e/`
 - Filename split: `*.test.ts` vs `*.e2e.spec.ts` vs `*.integration.test.ts`, `*Test.java` vs `*IT.java`
@@ -98,17 +95,16 @@ Interpret the result:
 | Probe outcome | Meaning | Action |
 |---------------|---------|--------|
 | Exit 0, non-empty list | Command resolves, tests exist | Accept the lane |
-| Exit 0, empty list, but test files exist | Discovery is broken | **Do not accept.** Report the likely glob or directory problem and ask |
-| Exit 0, empty list, and no test files exist | Runner resolves in a new project | Accept only as a visible `bootstrap` lane; report that it has zero tests |
+| Exit 0, empty list | Command resolves, discovers nothing | **Do not accept.** The glob or directory is wrong. Report it and ask |
 | Exit 127 / "command not found" | Runner not installed | Report the install step; do not write the lane |
 | Non-zero with a config error | Runner config is broken | Report the error verbatim; do not write the lane |
 | No probe available for this runner | Cannot verify cheaply | Say so explicitly in the report; do not claim the lane is verified |
 
-A lane that fails its probe must never be written to config as if it were fine. A successfully resolved runner with no test files is the one exception: configure it as `bootstrap`, where zero tests are reported loudly until the first test exists. An unverified lane is worse than a missing one because it looks configured and fails later, at gate time.
+A lane that fails its probe must never be written to config as if it were fine. An unverified lane is worse than a missing one: it looks configured and fails later, at gate time.
 
 ### Step 5 — Ask only about what is left
 
-Use `ask the user` for genuine ambiguity only:
+Ask the user, and wait for the answer, for genuine ambiguity only:
 
 - Two plausible e2e runners are both installed
 - CI runs a suite whose services cannot be started locally
@@ -181,7 +177,7 @@ Teardown runs even when the lane fails, so a red e2e run does not leak container
 
 ## Assigning triggers
 
-Use the runtime measured during probing, plus what the suite needs, per `references/policies/lane-policy/policy.md`:
+Use the runtime measured during probing, plus what the suite needs, per the `<plugin_root>/skills/tdd-guardian/references/policies/lane-policy/policy.md` skill:
 
 | Lane characteristics | `gateOn` |
 |----------------------|----------|
@@ -200,6 +196,18 @@ E2E lanes default to `coverage: "none"`. Browser-driven coverage requires an ins
 
 When more than one lane contributes coverage, prefer formats that carry per-line detail (LCOV, Cobertura, JaCoCo, coverage.py JSON, `coverage-final.json`) over summary-only formats (`coverage-summary.json`). Only per-line data can be merged as a true union; summary-only reports fall back to a weighted average that double-counts lines exercised by more than one lane. The gate reports which method it used.
 
+## Detect what is NOT there
+
+Everything above finds tooling that exists. These three checks find dimensions the repo is not verifying at all — and an unnamed gap is the one failure mode no later gate can catch, because every gate reports only on checks that are switched on.
+
+| Check | How | Report as |
+|-------|-----|-----------|
+| **Mutation tool** | `tooling-catalog` names one per ecosystem; check the manifest and lockfile for it | `mutation.available` — and when absent, a gap with the install hint, not silence |
+| **Property library** | Search the test tree (`rg`) for the ecosystem's library from the property-testing table in `tooling-catalog` (`fast-check`, `hypothesis`, `jqwik`, `proptest`, …) | `properties.detected` — absence is worth naming for a repo with conservation laws or round-trips |
+| **High-consequence directories** | Directory names matching payments, billing, auth, crypto, session, permission, migration — plus anything the CI config already treats specially | `criticalPathCandidates`, for the caller to propose |
+
+None of these is a failure. Report each as **unmeasured**, with the one-line consequence, so the caller can put it under Verification gaps rather than leaving a green board implying coverage it does not have.
+
 ## Return shape
 
 Return this to the caller:
@@ -212,12 +220,15 @@ Return this to the caller:
     setupCommand, teardownCommand, probeCommand, timeoutMs, description
   }],
   mutation: { command, available: boolean, installHint },
+  properties: { library, detected: boolean, installHint },
+  criticalPathCandidates: [{ glob, reason }],
   probeResults: [{ lane, status: "verified" | "empty" | "unresolved" | "unprobeable", detail, testCount }],
   evidence: [{ lane, source: "ci" | "manifest" | "topology" | "user", detail }],
   emptyReason: "greenfield" | "no-tests-yet" | "untested-legacy" | "deps-missing" | null,
   unmapped: ["<ecosystem or CI job found but not turned into a lane, with the reason>"],
-  notes: ["<install prerequisites the user must confirm>"]
+  notes: ["<install prerequisites the user must confirm>"],
+  gaps: ["<dimension not being verified, with its consequence>"]
 }
 ```
 
-`probeResults` and `evidence` are not optional. The caller shows the user which lanes were verified and which were inferred, so nothing is written to config under a false claim of verification.
+`probeResults`, `evidence`, and `gaps` are not optional. The first two show the user which lanes were verified and which were inferred, so nothing is written to config under a false claim of verification. The third shows what is not being verified at all — for the same reason.

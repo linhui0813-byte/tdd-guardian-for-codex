@@ -12,6 +12,7 @@ const configLib = require("./lib/config");
 const lanesLib = require("./lib/lanes");
 const coverageLib = require("./lib/coverage");
 const exec = require("./lib/exec");
+const verification = require("./lib/verification");
 
 const MAX_CONTEXT_CHARS = 8000;
 
@@ -85,24 +86,32 @@ function laneFailureReport(lane, result) {
 
 function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, coverageLanes) {
   const reports = laneResults.filter((r) => r.coverageReport).map((r) => r.coverageReport);
-  const expected = coverageLanes || [];
 
-  // Bootstrap belongs to the lanes expected to measure coverage. A new lane
-  // that contributes no coverage must not hide an empty report from a mature
-  // coverage lane.
+  // The bootstrap exemption belongs to the lanes that were supposed to MEASURE
+  // something, not to any lane at all. A brand-new e2e lane in bootstrap used to
+  // exempt the whole coverage gate, so a mature unit lane's critical paths were
+  // never evaluated.
+  //
+  // With no coverage-contributing lane at all, the exemption falls back to "every
+  // lane that ran is in bootstrap" — the genuine greenfield state, where nothing
+  // has been verified yet and there is nothing to measure.
+  const expected = coverageLanes || [];
   const inBootstrap = expected.length
     ? expected.every((name) => bootstrapLanes.includes(name))
     : bootstrapLanes.length > 0 && bootstrapLanes.length === laneResults.length;
 
-  // Optional means a lane's test failure does not block on its own. It does not
-  // make that lane's promised coverage optional: evaluating a partial merge can
-  // make an incompletely measured project look green.
-  const missing = expected.filter(
-    (name) => !bootstrapLanes.includes(name) && !laneResults.some((r) => r.name === name && r.coverageReport)
-  );
+  // A coverage lane that ran and produced no report leaves the merge incomplete.
+  // Passing on a subset silently understates — or overstates — every threshold.
+  const missing = expected.filter((name) => !bootstrapLanes.includes(name) && !laneResults.some((r) => r.name === name && r.coverageReport));
 
   if (reports.length === 0) {
-    const wantsCoverage = Object.values(config.coverageThresholds).some((v) => Number(v) > 0);
+    // A critical path can demand coverage the repo-wide thresholds do not: global
+    // bars at 0 with `src/payments/**` at 100 is a legitimate legacy-repo setup.
+    // Deciding this from the global thresholds alone let that configuration skip
+    // the gate entirely and report success, with the strict bar never evaluated.
+    const wantsCoverage =
+      Object.values(config.coverageThresholds).some((v) => Number(v) > 0) ||
+      (config.criticalPaths || []).some((p) => Object.values(p.thresholds || {}).some((v) => Number(v) > 0));
     if (!wantsCoverage) return { ok: true, message: "Coverage gate skipped (all thresholds are 0).", record: null };
     // A lane with no tests yet produces no coverage. That is the greenfield state,
     // not a misconfiguration.
@@ -122,8 +131,12 @@ function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, covera
     };
   }
 
-  const wantsCoverage = Object.values(config.coverageThresholds).some((v) => Number(v) > 0);
-  if (missing.length && wantsCoverage) {
+  const wantsEnforcement =
+    Object.values(config.coverageThresholds).some((v) => Number(v) > 0) ||
+    (config.criticalPaths || []).some((p) => Object.values(p.thresholds || {}).some((v) => Number(v) > 0)) ||
+    (config.criticalPaths || []).length > 0;
+
+  if (missing.length && wantsEnforcement) {
     return {
       ok: false,
       message:
@@ -134,7 +147,7 @@ function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, covera
     };
   }
 
-  const merged = coverageLib.mergeReports(reports);
+  const merged = coverageLib.mergeReports(reports, cwd);
 
   // A report that measured nothing scores 100% under the 0/0 convention. Passing
   // on that would turn a silent no-op coverage run into a green gate — unless the
@@ -174,44 +187,165 @@ function runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, covera
     );
   }
 
+  // Critical paths are absolute bars in both coverage modes: they express how
+  // expensive the code is to get wrong, which a moving baseline cannot express.
+  const critical = coverageLib.evaluateCriticalPaths(merged, config.criticalPaths, config.coverageThresholds);
+  if (critical.results.length) record.criticalPaths = critical.results;
+  const criticalNotes = critical.warnings.map((w) => "WARNING: " + w);
+  // The gate log is only surfaced when the hook blocks. A glob enforcing nothing
+  // is exactly the kind of finding that must not wait for an unrelated failure to
+  // become visible, so it goes to stderr on every run.
+  for (const warning of critical.warnings) console.error(`[tdd-guardian] ${warning}`);
+  const criticalFailure = critical.ok ? null : "Critical-path coverage failed: " + critical.failures.join("; ");
+
   if (String(config.coverageMode) === "no-decrease") {
     const branch = lanesLib.currentBranch(cwd) || "unknown";
     const baseline = state.baseline;
 
     if (!baseline || !baseline.coverage || baseline.branch !== branch) {
-      record.status = "BASELINE";
+      record.status = criticalFailure ? "FAIL" : "BASELINE";
       return {
-        ok: true,
-        message: [`Coverage baseline recorded for branch '${branch}': ${describeTotals(percentages)}`, ...notes].join("\n"),
+        ok: !criticalFailure,
+        message: [
+          criticalFailure || `Coverage baseline recorded for branch '${branch}': ${describeTotals(percentages)}`,
+          ...notes,
+          ...criticalNotes,
+        ].join("\n"),
         record,
-        newBaseline: { branch, recorded_at: new Date().toISOString(), coverage: percentages },
+        // A failing critical path must not bank a baseline — that would freeze the
+        // failure in as the new normal.
+        newBaseline: criticalFailure ? null : { branch, recorded_at: new Date().toISOString(), coverage: percentages },
       };
     }
 
     const cmp = coverageLib.compareToBaseline(merged.totals, baseline.coverage);
-    record.status = cmp.ok ? "PASS" : "FAIL";
+    const ok = cmp.ok && !criticalFailure;
+    record.status = ok ? "PASS" : "FAIL";
     return {
-      ok: cmp.ok,
-      message: cmp.ok
-        ? [`Coverage gate passed (no decrease from baseline): ${cmp.summary}`, ...notes].join("\n")
-        : ["Coverage decreased from baseline: " + cmp.failures.join("; "), ...notes].join("\n"),
+      ok,
+      message: [
+        ok
+          ? `Coverage gate passed (no decrease from baseline): ${cmp.summary}`
+          : [cmp.ok ? null : "Coverage decreased from baseline: " + cmp.failures.join("; "), criticalFailure].filter(Boolean).join("\n"),
+        ...notes,
+        ...criticalNotes,
+      ].join("\n"),
       record,
     };
   }
 
   const cmp = coverageLib.compareToThresholds(merged.totals, config.coverageThresholds);
-  record.status = cmp.ok ? "PASS" : "FAIL";
-  const warnings = cmp.warnings.length ? ["", ...cmp.warnings.map((w) => "WARNING: " + w)] : [];
+  const ok = cmp.ok && !criticalFailure;
+  record.status = ok ? "PASS" : "FAIL";
+  const warnings = cmp.warnings.length || criticalNotes.length ? ["", ...cmp.warnings.map((w) => "WARNING: " + w), ...criticalNotes] : [];
 
   return {
-    ok: cmp.ok,
-    message: cmp.ok
-      ? [`Coverage gate passed: ${cmp.summary}`, ...notes, ...warnings].join("\n")
-      : ["Coverage gate failed: " + cmp.failures.join("; "), ...notes, ...warnings].join("\n"),
+    ok,
+    message: [
+      ok
+        ? `Coverage gate passed: ${cmp.summary}${describeCriticalResults(critical.results)}`
+        : [cmp.ok ? null : "Coverage gate failed: " + cmp.failures.join("; "), criticalFailure].filter(Boolean).join("\n"),
+      ...notes,
+      ...warnings,
+    ].join("\n"),
     record,
   };
 }
 
+/**
+ * Verify any recorded red receipts and append findings to the gate log.
+ *
+ * A receipt store that cannot be written is reported and otherwise ignored — a
+ * bookkeeping failure must not take down a gate that is otherwise green.
+ */
+function reportSeparation(cwd, log, greenLanes) {
+  const loaded = verification.loadReceipts(cwd);
+
+  // A corrupt or unreadable store is reported, never silently treated as "no
+  // receipts". Erasing the evidence and carrying on green is the failure mode this
+  // whole module exists to catch, applied to its own bookkeeping.
+  if (loaded.error) {
+    console.error(`[tdd-guardian] ${loaded.error}`);
+    log.push(`Red receipts could not be read: ${loaded.error}`);
+    return;
+  }
+  for (const problem of loaded.problems) console.error(`[tdd-guardian] ${problem}`);
+
+  const store = loaded.store;
+  if (store.receipts.length === 0) return;
+
+  // Only lanes that just passed can settle a receipt. A receipt for a lane that
+  // did not run — or ran red — stays open rather than banking a verdict about a
+  // transition that has not happened.
+  let verified;
+  let reports;
+  try {
+    ({ store: verified, reports } = verification.verifyAll(store, cwd, { greenLanes }));
+  } catch (err) {
+    // Report-only means report-only: a bug in receipt verification must not fail
+    // a gate whose lanes and coverage both passed.
+    console.error(`[tdd-guardian] Red-receipt verification failed: ${err && err.message ? err.message : String(err)}`);
+    log.push(`Red-receipt verification could not run: ${err && err.message ? err.message : String(err)}`);
+    return;
+  }
+
+  try {
+    // Under the same lock the CLI uses — otherwise a concurrent `receipt record`
+    // and this hook can each save a store missing the other's receipt.
+    verification.updateReceipts(cwd, (fresh) =>
+      verified.receipts.reduce((acc, receipt) => verification.upsertReceipt(acc, receipt), fresh.store)
+    );
+  } catch (err) {
+    console.error(`[tdd-guardian] Could not update red receipts: ${err.message}`);
+  }
+
+  const lines = verification.describeReports(reports);
+  if (lines.length === 0) {
+    // Only the receipts settled on THIS run are worth announcing. Naming settled
+    // ones every time would print the same line after every task forever.
+    const held = reports.filter((r) => !r.settled && !r.pending).map((r) => r.id);
+    if (held.length === 0) return;
+    console.error(`[tdd-guardian] Specification held for ${held.join(", ")} — no recorded test file changed between red and green.`);
+    return;
+  }
+
+  log.push(["Specification-implementation separation:", ...lines].join("\n"));
+  for (const line of lines) console.error(`[tdd-guardian] ${line}`);
+}
+
+/**
+ * Is the mutation gate required, and by what?
+ *
+ * `requireMutation` exists at two levels: the repo-wide switch and each
+ * criticalPaths entry. Either one is sufficient — a config that sets it only on
+ * `src/payments/**` is asking for mutation testing, and reading only the global
+ * flag would accept that config and then never run the command.
+ */
+function mutationRequirement(config) {
+  if (config.requireMutation) return { required: true, reason: "requireMutation is true" };
+  const paths = (config.criticalPaths || []).filter((p) => p.requireMutation).map((p) => p.glob);
+  if (paths.length) return { required: true, reason: `required by criticalPaths: ${paths.join(", ")}` };
+  return { required: false, reason: "" };
+}
+
+/**
+ * Summarise critical-path results for a passing gate.
+ *
+ * A glob matching zero files is reported separately and never counted as checked:
+ * the feature's own rule is that a rule enforcing nothing must not read as
+ * enforced, and "3 critical path(s) checked" when one matched nothing says the
+ * opposite.
+ */
+function describeCriticalResults(results) {
+  if (!results || results.length === 0) return "";
+  const checked = results.filter((r) => r.matchedFiles > 0).length;
+  const unmatched = results.filter((r) => r.matchedFiles === 0).map((r) => r.glob);
+  const parts = [`${checked} critical path(s) checked`];
+  if (unmatched.length) parts.push(`${unmatched.length} matched nothing: ${unmatched.join(", ")}`);
+  return ` (${parts.join("; ")})`;
+}
+
+/** Convert a coverage exception into a failed gate instead of silent approval. */
 function runCoverageGateSafely(config, laneResults, state, cwd, bootstrapLanes, coverageLanes) {
   try {
     return runCoverageGate(config, laneResults, state, cwd, bootstrapLanes, coverageLanes);
@@ -237,7 +371,8 @@ function runCoverageGateSafely(config, laneResults, state, cwd, bootstrapLanes, 
 function enforcementDemands(config) {
   const demands = [];
   if (Object.values(config.coverageThresholds).some((v) => Number(v) > 0)) demands.push("coverage thresholds");
-  if (config.requireMutation && config.mutationGateOn.includes("stop")) demands.push("mutation testing");
+  if ((config.criticalPaths || []).length) demands.push(`${config.criticalPaths.length} critical path(s)`);
+  if (mutationRequirement(config).required && config.mutationGateOn.includes("stop")) demands.push("mutation testing");
   return demands;
 }
 
@@ -328,10 +463,12 @@ function main() {
   const sha = lanesLib.headSha(cwd) || "";
   const laneResults = [];
   const bootstrapLanes = [];
+  const greenLanes = new Set();
 
   for (const lane of lanes) {
     const result = lanesLib.runLane(lane, cwd);
     laneResults.push(result);
+    if (result.ok) greenLanes.add(lane.name);
     const entry = lanesLib.recordLaneResult(state, lane.name, result, sha);
 
     // A lane that has never had a test is greenfield, not broken. Report it loudly
@@ -360,6 +497,8 @@ function main() {
     }
   }
 
+  reportSeparation(cwd, log, greenLanes);
+
   const coverageLaneNames = lanes.filter((lane) => lane.coverage === "include").map((lane) => lane.name);
   const coverageGate = runCoverageGateSafely(config, laneResults, state, cwd, bootstrapLanes, coverageLaneNames);
   log.push(coverageGate.message);
@@ -372,7 +511,8 @@ function main() {
     return;
   }
 
-  if (config.requireMutation && config.mutationGateOn.includes("stop")) {
+  const mutationRequiredBy = mutationRequirement(config);
+  if (mutationRequiredBy.required && config.mutationGateOn.includes("stop")) {
     const result = exec.run(config.mutationCommand, cwd, { timeoutMs: 1800000 });
     log.push(`$ ${config.mutationCommand}\n${result.stdoutTail}`);
     state.mutation = {
@@ -382,7 +522,7 @@ function main() {
     };
     if (result.status !== "pass") {
       lanesLib.saveState(cwd, state);
-      fail("Mutation gate failed", log.join("\n\n"));
+      fail(`Mutation gate failed (${mutationRequiredBy.reason})`, log.join("\n\n"));
       return;
     }
   }

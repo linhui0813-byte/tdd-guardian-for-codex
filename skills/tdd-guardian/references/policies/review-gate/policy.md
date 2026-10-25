@@ -1,8 +1,3 @@
----
-name: review-gate
-description: Produce findings-first code review with severity ordering, test-gap findings, and test-quality audit.
----
-
 # Review Gate
 
 ## Output order
@@ -19,7 +14,7 @@ description: Produce findings-first code review with severity ordering, test-gap
 
 ## Test quality audit (mandatory)
 
-Follow the assertion hierarchy and mock rules in `references/policies/policy-core/policy.md`.
+Follow the assertion hierarchy and mock rules defined in the `policy-core` skill.
 
 For every test file the change touches, and every test file covering a changed source file, evaluate:
 
@@ -64,6 +59,36 @@ For each test under review, ask the `lane-policy` question: would this test stil
 
 Common cases: SQL correctness verified against a mocked driver, auth middleware verified against a stubbed guard, file permissions verified against a mocked `fs`.
 
+### Check 7: Under-specified units (specification strength)
+
+Checks 1-6 all ask whether the test verifies the real thing. This one asks whether the claim is strong enough to be worth verifying.
+
+For each changed unit, identify whether it has a **law** — a conserved quantity, a round-trip, an idempotent operation, an ordering, a monotonic relation, or a stated invariant. If it does and every test for it is S1/S2 (examples and boundaries only), flag it.
+
+| Finding | Severity |
+|---------|----------|
+| Unit has a law; no S4-S6 case covers it | Medium |
+| Unit is on a `criticalPaths` entry with `requireSpecLevel` and does not meet it | High |
+| Every test for a unit would still pass against a hard-coded return value | High |
+| Matrix omits the question entirely (no law identified, no statement that none exists) | Low |
+
+The hard-coded-return check is the cheap version: if replacing the function body with `return <the expected value>` would keep every test green, the tests specify one example, not the behavior. Run that check on every changed unit before reaching for the law question.
+
+### Check 8: Change tax (the symmetric pathology)
+
+Checks 1-6 push toward more verification. Unchecked, that produces a suite so coupled to structure that nobody refactors. These findings push back, and they are findings in the same sense as the others — see the change-tax table in `policy-core`.
+
+| Finding | Severity |
+|---------|----------|
+| A change with no behavior change edits existing assertions | Medium — the tests specify structure |
+| An interface with exactly one production implementation and one test double | Medium — the seam exists only to be mocked |
+| More distinct mocks in a test than the unit has collaborators | Medium |
+| A test that must change when a private method is renamed | Medium |
+
+Read the diff for this one. Assertions **added** are healthy at any volume. Assertions **modified** while the described behavior is unchanged are the signal — that is the specification moving to fit the implementation, which is the same defect the red receipts catch, seen in the diff rather than in the receipt.
+
+If `.codex/tdd-guardian/receipts.json` exists, read it: a receipt with verdict `SEPARATION-BROKEN` names the exact files, and its finding is High.
+
 ### Output format for test quality findings
 
 ```markdown
@@ -78,12 +103,14 @@ Common cases: SQL correctness verified against a mocked driver, auth middleware 
 
 ## Scope
 
-Covers the final review rubric: finding order, the test-quality audit checks, the lane audit, and severity assignment.
+Covers the final review rubric: finding order, the test-quality audit checks, the specification-strength and change-tax audits, the lane audit, and severity assignment.
 
 Does NOT cover:
 
 | Question | Skill |
 |----------|-------|
-| What do assertion Levels 1-7 mean? | `references/policies/policy-core/policy.md` |
-| Which lane should a test live in? | `references/policies/lane-policy/policy.md` |
-| How are coverage numbers computed? | `references/policies/coverage-gate/policy.md` |
+| What do assertion Levels 1-7 mean? | `<plugin_root>/skills/tdd-guardian/references/policies/policy-core/policy.md` |
+| What do specification levels S1-S6 mean? | `<plugin_root>/skills/tdd-guardian/references/policies/policy-core/policy.md` |
+| Which lane should a test live in? | `<plugin_root>/skills/tdd-guardian/references/policies/lane-policy/policy.md` |
+| How are coverage numbers computed? | `<plugin_root>/skills/tdd-guardian/references/policies/coverage-gate/policy.md` |
+| Which property library fits this language? | `<plugin_root>/skills/tdd-guardian/references/policies/tooling-catalog/policy.md` |

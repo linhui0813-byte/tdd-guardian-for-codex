@@ -1,6 +1,6 @@
 ---
 name: tdd-guardian
-description: Use when initializing TDD quality gates in a repository, running or diagnosing test and coverage lanes, planning or implementing a change with red-green-refactor, auditing mutation coverage, reviewing test quality, or resolving a TDD Guardian commit, push, or Stop-hook block in Codex.
+description: Use when initializing TDD quality gates in a repository, running or diagnosing test and coverage lanes, planning or implementing a change with red-green-refactor, auditing mutation coverage, recording red receipts, attacking a test matrix, reviewing test quality, or resolving a TDD Guardian commit, push, or Stop-hook block in Codex.
 ---
 
 # TDD Guardian
@@ -30,7 +30,9 @@ Read only the files required for the requested operation:
 | Run a lane, commit gate, or push gate | `references/workflows/gate.md`, `references/workflows/shared/load-config.md`, `references/workflows/shared/run-lane.md` |
 | Show status | `references/workflows/status.md`, `references/workflows/shared/load-config.md` |
 | Plan work | `references/workflows/plan.md`, `references/roles/tdd-planner.md` |
-| Design tests | `references/workflows/design-tests.md`, `references/roles/tdd-test-designer.md`, `references/policies/test-matrix/policy.md` |
+| Design tests | `references/workflows/design-tests.md`, `references/roles/tdd-test-designer.md`, `references/roles/tdd-spec-adversary.md`, `references/policies/test-matrix/policy.md` |
+| Record or verify red receipts | `references/workflows/receipts.md` |
+| Attack a test matrix | `references/roles/tdd-spec-adversary.md`, `references/policies/policy-core/policy.md` |
 | Implement | `references/workflows/implement.md`, `references/roles/tdd-implementer.md`, `references/policies/policy-core/policy.md` |
 | Audit coverage | `references/workflows/audit-coverage.md`, `references/roles/tdd-coverage-auditor.md`, `references/policies/coverage-gate/policy.md` |
 | Audit mutation | `references/workflows/audit-mutation.md`, `references/roles/tdd-mutation-auditor.md`, `references/policies/mutation-gate/policy.md` |
@@ -38,6 +40,8 @@ Read only the files required for the requested operation:
 | Full TDD workflow | `references/workflows/workflow.md`, then the references for each stage as that stage begins |
 
 For language-specific runner, coverage, mutation, and probe facts, read `references/policies/tooling-catalog/policy.md`, then only its matching language file.
+
+All paths in the workflow table are relative to `skill_dir`; resolve them there even when the workspace is another repository. The reference files use the same resolved `<plugin_root>` placeholder and do not depend on a shell environment variable.
 
 ## 3. Preserve the gate invariants
 
@@ -51,6 +55,9 @@ For language-specific runner, coverage, mutation, and probe facts, read `referen
 8. Preserve the previous passing timestamp when a later run fails.
 9. Run push lanes only when the user requests a push gate or an authorized publish/push operation requires them.
 10. Use the configured bypass only with explicit user consent for that operation.
+11. Attack the test matrix before implementation. Where a unit has a law, include an S4-S6 specification case.
+12. Record red receipts before implementation. Missing receipts mean unverified, never a violation; findings remain report-only.
+13. Evaluate configured critical-path coverage and mutation requirements. Preserve per-metric uncertainty and fail unmatched coverage paths.
 
 ## 4. Execute safely
 
